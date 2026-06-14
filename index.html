@@ -48,7 +48,7 @@
     line-height: 1.65;
   }
 
-  header {
+  #page-header {
     background: var(--header-bg);
     color: var(--header-fg);
     border-bottom: 3px solid var(--accent);
@@ -62,16 +62,16 @@
     color: var(--header-fg);
   }
 
-  main { max-width: 32rem; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  #page-main { max-width: 32rem; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
 
   /* Big connect/stop button */
   #main-btn {
     font: inherit;
     font-weight: 800;
-    font-size: 1.4rem;
+    font-size: 1.8rem;
     width: 100%;
-    min-height: 4.5rem;
-    padding: .8rem 1.5rem;
+    min-height: 30vh;
+    padding: 1rem 1.5rem;
     border-radius: var(--radius);
     border: none;
     background: var(--accent);
@@ -79,7 +79,7 @@
     box-shadow: var(--shadow);
     cursor: pointer;
     transition: opacity .15s, background .15s;
-    margin-bottom: 1.5rem;
+    margin-bottom: 2rem;
   }
   #main-btn.stop-mode { background: var(--danger); color: #fff; }
   #main-btn:hover:not(:disabled) { opacity: .85; }
@@ -109,9 +109,7 @@
   }
 
   /* Distance stats */
-  #stats {
-    margin: 1.5rem 0;
-  }
+  #stats { margin: 1.5rem 0; }
   .stat-row {
     display: flex;
     justify-content: space-between;
@@ -123,23 +121,12 @@
     box-shadow: var(--shadow);
     margin-bottom: .6rem;
   }
-  .stat-label {
-    font-weight: 600;
-    font-size: .95rem;
-  }
+  .stat-label { font-weight: 600; font-size: .95rem; }
   .stat-value {
     font-size: 1.3rem;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
     color: var(--accent);
-  }
-
-  /* Status */
-  #status {
-    font-size: .9rem;
-    color: var(--muted);
-    margin: 0 0 1rem;
-    min-height: 1.4em;
   }
 
   /* Reset button */
@@ -161,21 +148,16 @@
   }
   #reset-btn:hover { opacity: .75; }
 
-  #unsupported { color: var(--danger); font-size: .9rem; margin: .5rem 0; }
-
   .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>
 </head>
 <body>
-<header>
+<div id="page-header">
   <h1>Cyclone</h1>
-</header>
+</div>
 
-<main>
+<div id="page-main">
   <button id="main-btn">Connect</button>
-
-  <p id="status" role="status" aria-live="polite" aria-atomic="true">Not connected. Tap Connect to start.</p>
-  <p id="unsupported" hidden>This browser has no Bluetooth. Open this page in WebBLE.</p>
 
   <div id="rpm-display" hidden>
     <div id="rpm-label">Cadence (RPM)</div>
@@ -202,9 +184,8 @@
   </div>
 
   <button id="reset-btn">Reset all distance data</button>
-</main>
+</div>
 
-<!-- ARIA speech regions -->
 <p id="spoken" class="vh" aria-live="assertive" aria-atomic="true"></p>
 
 <script>
@@ -212,27 +193,27 @@
 const FTMS = 0x1826, IBD = 0x2ad2;
 const $ = id => document.getElementById(id);
 
-// ── State ──────────────────────────────────────────────────────────
 let device = null, char = null;
 let connected = false;
 let sessionDistanceM = 0;
 let lastT = null;
 let latestSpeed_kmh = 0;
-let latestCadence_rpm = 0;
+let speakTimer = null;
 
-// ── Speech ─────────────────────────────────────────────────────────
 function speak(text) {
   if (!text) return;
   const r = $("spoken");
   r.textContent = "";
-  requestAnimationFrame(() => { r.textContent = text; });
+  requestAnimationFrame(() => {
+    r.textContent = text;
+    // Clear after VoiceOver has had time to read it so it doesn't repeat on swipe
+    clearTimeout(speakTimer);
+    speakTimer = setTimeout(() => { r.textContent = ""; }, 6000);
+  });
 }
-function setStatus(t) { $("status").textContent = t; }
 
-// ── RPM band ───────────────────────────────────────────────────────
 let lastBand = null;
 function updateRpm(cadenceRpm) {
-  latestCadence_rpm = cadenceRpm;
   const band = Math.round(cadenceRpm / 5) * 5;
   $("rpm-value").textContent = band;
   if (band !== lastBand) {
@@ -241,31 +222,19 @@ function updateRpm(cadenceRpm) {
   }
 }
 
-// ── Distance storage ───────────────────────────────────────────────
-// Stored as array of {date:"YYYY-MM-DD", km:X} in localStorage key "cyclone-sessions"
 function loadSessions() {
-  try {
-    const raw = localStorage.getItem("cyclone-sessions");
-    if (raw) return JSON.parse(raw);
-  } catch (e) {}
+  try { const r = localStorage.getItem("cyclone-sessions"); if (r) return JSON.parse(r); } catch (e) {}
   return [];
 }
-function saveSessions(sessions) {
-  localStorage.setItem("cyclone-sessions", JSON.stringify(sessions));
-}
-function todayStr() {
-  return new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
-}
+function saveSessions(s) { localStorage.setItem("cyclone-sessions", JSON.stringify(s)); }
+function todayStr() { return new Date().toISOString().slice(0, 10); }
 function weekStart(dateStr) {
-  // ISO week: Monday start
   const d = new Date(dateStr + "T00:00:00");
-  const day = d.getDay(); // 0=Sun,1=Mon,...
-  const diff = (day === 0 ? -6 : 1 - day);
-  const mon = new Date(d);
-  mon.setDate(d.getDate() + diff);
+  const diff = d.getDay() === 0 ? -6 : 1 - d.getDay();
+  const mon = new Date(d); mon.setDate(d.getDate() + diff);
   return mon.toISOString().slice(0, 10);
 }
-function monthOf(dateStr) { return dateStr.slice(0, 7); } // "YYYY-MM"
+function monthOf(dateStr) { return dateStr.slice(0, 7); }
 
 function recordSession(km) {
   if (km <= 0) return;
@@ -276,9 +245,7 @@ function recordSession(km) {
 
 function computeStats() {
   const sessions = loadSessions();
-  const today = todayStr();
-  const thisWeekStart = weekStart(today);
-  const thisMonth = monthOf(today);
+  const today = todayStr(), thisWeekStart = weekStart(today), thisMonth = monthOf(today);
   let todayKm = 0, weekKm = 0, monthKm = 0, allKm = 0;
   for (const s of sessions) {
     allKm += s.km;
@@ -297,23 +264,22 @@ function renderStats() {
   $("stat-alltime").textContent = `${allKm.toFixed(2)} km`;
 }
 
-// ── Bluetooth parsing ──────────────────────────────────────────────
 function parseBike(dv) {
   const flags = dv.getUint16(0, true); let o = 2; const out = {};
   const u16 = () => { const v = dv.getUint16(o, true); o += 2; return v; };
   const s16 = () => { const v = dv.getInt16(o, true); o += 2; return v; };
   const u24 = () => { const a = dv.getUint8(o), b = dv.getUint8(o+1), c = dv.getUint8(o+2); o += 3; return a|(b<<8)|(c<<16); };
   const u8  = () => { const v = dv.getUint8(o); o += 1; return v; };
-  if (!(flags & 1))  out.speed_kmh    = u16() / 100; else;
+  if (!(flags & 1))  out.speed_kmh   = u16() / 100;
   if (flags & 2)     u16();
-  if (flags & 4)     out.cadence_rpm  = u16() / 2;
+  if (flags & 4)     out.cadence_rpm = u16() / 2;
   if (flags & 8)     u16();
-  if (flags & 16)    out.distance_m   = u24();
+  if (flags & 16)    out.distance_m  = u24();
   if (flags & 32)    s16();
-  if (flags & 64)    out.power_w      = s16();
+  if (flags & 64)    out.power_w     = s16();
   if (flags & 128)   s16();
-  if (flags & 256)   u16(); // energy
-  if (flags & 512)   u8();  // heart rate
+  if (flags & 256)   u16();
+  if (flags & 512)   u8();
   return out;
 }
 
@@ -322,8 +288,6 @@ function onData(e) {
   const now = performance.now() / 1000;
   if ("speed_kmh" in m) latestSpeed_kmh = m.speed_kmh;
   if ("cadence_rpm" in m) updateRpm(m.cadence_rpm);
-
-  // Dead-reckon distance from speed
   if ("distance_m" in m) {
     sessionDistanceM = m.distance_m;
   } else {
@@ -333,7 +297,6 @@ function onData(e) {
   lastT = now;
 }
 
-// ── Connect / disconnect ───────────────────────────────────────────
 function setConnectedUI() {
   connected = true;
   const btn = $("main-btn");
@@ -362,14 +325,9 @@ function endSession() {
 }
 
 async function connect() {
-  if (!navigator.bluetooth) {
-    $("unsupported").hidden = false;
-    setStatus("No Bluetooth in this browser. Open in WebBLE.");
-    return;
-  }
+  if (!navigator.bluetooth) return;
   try {
     $("main-btn").disabled = true;
-    setStatus("Opening chooser. Start pedalling, then pick your machine.");
     const savedName = localStorage.getItem("cyclone-device-name");
     const filters = savedName
       ? [{ name: savedName }, { services: [FTMS] }, { namePrefix: "Sport01" }]
@@ -377,7 +335,6 @@ async function connect() {
     device = await navigator.bluetooth.requestDevice({ filters, optionalServices: [FTMS] });
     localStorage.setItem("cyclone-device-name", device.name || "");
     device.addEventListener("gattserverdisconnected", onUnexpectedDisconnect);
-    setStatus(`Connecting to ${device.name || "machine"}...`);
     const server = await device.gatt.connect();
     const svc    = await server.getPrimaryService(FTMS);
     char         = await svc.getCharacteristic(IBD);
@@ -386,15 +343,9 @@ async function connect() {
     sessionDistanceM = 0;
     lastT = null;
     latestSpeed_kmh = 0;
-    setStatus(`Connected to ${device.name || "machine"}.`);
     setConnectedUI();
   } catch (err) {
     $("main-btn").disabled = false;
-    const name = err && err.name ? err.name : "";
-    const msg  = err && err.message ? err.message : String(err);
-    if (name === "NotFoundError") setStatus("No machine selected. Make sure you are pedalling, then try again.");
-    else if (name === "SecurityError") setStatus("Blocked by browser security. Open over https.");
-    else setStatus(`Could not connect: ${msg}`);
   }
 }
 
@@ -405,31 +356,22 @@ function stop() {
   }
   device = null; char = null;
   endSession();
-  setStatus("Session ended. Tap Connect when ready to ride again.");
   setDisconnectedUI();
 }
 
 function onUnexpectedDisconnect() {
   endSession();
-  setStatus("Disconnected unexpectedly. Tap Connect to reconnect.");
   setDisconnectedUI();
 }
 
-// ── Reset ──────────────────────────────────────────────────────────
 function resetData() {
   localStorage.removeItem("cyclone-sessions");
   renderStats();
   speak("All distance data cleared.");
 }
 
-// ── Init ───────────────────────────────────────────────────────────
-$("main-btn").addEventListener("click", () => {
-  if (connected) stop();
-  else connect();
-});
+$("main-btn").addEventListener("click", () => { if (connected) stop(); else connect(); });
 $("reset-btn").addEventListener("click", resetData);
-
-if (!navigator.bluetooth) $("unsupported").hidden = false;
 renderStats();
 </script>
 </body>
