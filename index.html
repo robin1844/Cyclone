@@ -199,6 +199,19 @@ let sessionDistanceM = 0;
 let lastT = null;
 let latestSpeed_kmh = 0;
 let speakTimer = null;
+let wakeLock = null;
+
+async function acquireWakeLock() {
+  if (!navigator.wakeLock) return;
+  try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+function releaseWakeLock() {
+  if (wakeLock) { wakeLock.release(); wakeLock = null; }
+}
+// Re-acquire if the page becomes visible again (lock is dropped on page hide)
+document.addEventListener("visibilitychange", () => {
+  if (connected && document.visibilityState === "visible") acquireWakeLock();
+});
 
 function speak(text) {
   if (!text) return;
@@ -299,6 +312,7 @@ function onData(e) {
 
 function setConnectedUI() {
   connected = true;
+  acquireWakeLock();
   const btn = $("main-btn");
   btn.textContent = "Stop";
   btn.classList.add("stop-mode");
@@ -310,6 +324,7 @@ function setConnectedUI() {
 
 function setDisconnectedUI() {
   connected = false;
+  releaseWakeLock();
   const btn = $("main-btn");
   btn.textContent = "Connect";
   btn.classList.remove("stop-mode");
