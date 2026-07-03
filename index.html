@@ -170,11 +170,11 @@
       <span class="stat-value" id="stat-today">0.00 km</span>
     </div>
     <div class="stat-row">
-      <span class="stat-label">This week</span>
+      <span class="stat-label">Last 7 days</span>
       <span class="stat-value" id="stat-week">0.00 km</span>
     </div>
     <div class="stat-row">
-      <span class="stat-label">This month</span>
+      <span class="stat-label">Last 30 days</span>
       <span class="stat-value" id="stat-month">0.00 km</span>
     </div>
     <div class="stat-row">
@@ -241,13 +241,10 @@ function loadSessions() {
 }
 function saveSessions(s) { localStorage.setItem("cyclone-sessions", JSON.stringify(s)); }
 function todayStr() { return new Date().toISOString().slice(0, 10); }
-function weekStart(dateStr) {
-  const d = new Date(dateStr + "T00:00:00");
-  const diff = d.getDay() === 0 ? -6 : 1 - d.getDay();
-  const mon = new Date(d); mon.setDate(d.getDate() + diff);
-  return mon.toISOString().slice(0, 10);
+function daysAgoStr(n) {
+  const d = new Date(); d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
 }
-function monthOf(dateStr) { return dateStr.slice(0, 7); }
 
 function recordSession(km) {
   if (km <= 0) return;
@@ -258,13 +255,13 @@ function recordSession(km) {
 
 function computeStats() {
   const sessions = loadSessions();
-  const today = todayStr(), thisWeekStart = weekStart(today), thisMonth = monthOf(today);
+  const today = todayStr(), seven = daysAgoStr(7), thirty = daysAgoStr(30);
   let todayKm = 0, weekKm = 0, monthKm = 0, allKm = 0;
   for (const s of sessions) {
     allKm += s.km;
     if (s.date === today) todayKm += s.km;
-    if (s.date >= thisWeekStart) weekKm += s.km;
-    if (monthOf(s.date) === thisMonth) monthKm += s.km;
+    if (s.date >= seven) weekKm += s.km;
+    if (s.date >= thirty) monthKm += s.km;
   }
   return { todayKm, weekKm, monthKm, allKm };
 }
