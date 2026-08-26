@@ -86,6 +86,33 @@
   #main-btn:disabled { opacity: .38; cursor: default; }
   :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
+  /* Workout audio */
+  #audio-controls {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: .75rem;
+    margin-bottom: 2rem;
+  }
+  #audio-controls button {
+    font: inherit;
+    font-weight: 700;
+    min-height: 3.5rem;
+    padding: .7rem 1.2rem;
+    border-radius: var(--radius);
+    border: 1.5px solid var(--border);
+    background: var(--card);
+    color: var(--fg);
+    box-shadow: var(--shadow);
+    cursor: pointer;
+  }
+  #audio-controls button:hover { opacity: .75; }
+  #play-btn {
+    background: var(--accent) !important;
+    color: var(--accent-fg) !important;
+    border-color: var(--accent) !important;
+  }
+  [hidden] { display: none !important; }
+
   /* RPM display */
   #rpm-display {
     text-align: center;
@@ -159,6 +186,13 @@
 <div id="page-main">
   <button id="main-btn">Connect</button>
 
+  <div id="audio-controls">
+    <button id="choose-audio-btn" type="button">Choose workout</button>
+    <input id="audio-file" class="vh" type="file" accept="audio/mpeg,.mp3" />
+    <button id="play-btn" type="button" hidden>Play</button>
+    <audio id="workout-audio" preload="metadata"></audio>
+  </div>
+
   <div id="rpm-display" hidden>
     <div id="rpm-label">Cadence (RPM)</div>
     <div id="rpm-value">0</div>
@@ -200,6 +234,7 @@ let lastT = null;
 let latestSpeed_kmh = 0;
 let speakTimer = null;
 let wakeLock = null;
+let audioUrl = null;
 
 async function acquireWakeLock() {
   if (!navigator.wakeLock) return;
@@ -382,8 +417,54 @@ function resetData() {
   speak("All distance data cleared.");
 }
 
+function chooseWorkout() {
+  $("audio-file").click();
+}
+
+function loadWorkout(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+
+  const audio = $("workout-audio");
+  audio.pause();
+  if (audioUrl) URL.revokeObjectURL(audioUrl);
+  audioUrl = URL.createObjectURL(file);
+  audio.src = audioUrl;
+  audio.load();
+
+  const playBtn = $("play-btn");
+  playBtn.textContent = "Play";
+  playBtn.hidden = false;
+  playBtn.setAttribute("aria-label", `Play ${file.name}`);
+}
+
+async function togglePlayback() {
+  const audio = $("workout-audio");
+  const playBtn = $("play-btn");
+  if (audio.paused) {
+    try { await audio.play(); } catch (e) {}
+  } else {
+    audio.pause();
+  }
+}
+
+function updatePlaybackButton() {
+  const audio = $("workout-audio");
+  const playBtn = $("play-btn");
+  const file = $("audio-file").files && $("audio-file").files[0];
+  const action = audio.paused ? "Play" : "Pause";
+  playBtn.textContent = action;
+  playBtn.setAttribute("aria-label", file ? `${action} ${file.name}` : action);
+}
+
 $("main-btn").addEventListener("click", () => { if (connected) stop(); else connect(); });
 $("reset-btn").addEventListener("click", resetData);
+$("choose-audio-btn").addEventListener("click", chooseWorkout);
+$("audio-file").addEventListener("change", loadWorkout);
+$("play-btn").addEventListener("click", togglePlayback);
+$("workout-audio").addEventListener("play", updatePlaybackButton);
+$("workout-audio").addEventListener("pause", updatePlaybackButton);
+$("workout-audio").addEventListener("ended", updatePlaybackButton);
 renderStats();
 </script>
 </body>
