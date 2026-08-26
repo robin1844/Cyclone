@@ -188,7 +188,7 @@
 
   <div id="audio-controls">
     <button id="choose-audio-btn" type="button">Choose workout</button>
-    <input id="audio-file" class="vh" type="file" accept="audio/mpeg,.mp3" />
+    <input id="audio-file" type="file" accept="audio/mpeg,.mp3" hidden />
     <button id="play-btn" type="button" hidden>Play</button>
     <audio id="workout-audio" preload="metadata"></audio>
   </div>
@@ -435,7 +435,11 @@ function loadWorkout(e) {
   const playBtn = $("play-btn");
   playBtn.textContent = "Play";
   playBtn.hidden = false;
-  playBtn.setAttribute("aria-label", `Play ${file.name}`);
+  playBtn.setAttribute("aria-label", `Play ${workoutName(file)}`);
+}
+
+function workoutName(file) {
+  return file.name.replace(/\.mp3$/i, "");
 }
 
 async function togglePlayback() {
@@ -454,7 +458,7 @@ function updatePlaybackButton() {
   const file = $("audio-file").files && $("audio-file").files[0];
   const action = audio.paused ? "Play" : "Pause";
   playBtn.textContent = action;
-  playBtn.setAttribute("aria-label", file ? `${action} ${file.name}` : action);
+  playBtn.setAttribute("aria-label", file ? `${action} ${workoutName(file)}` : action);
 }
 
 $("main-btn").addEventListener("click", () => { if (connected) stop(); else connect(); });
