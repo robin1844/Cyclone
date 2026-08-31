@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<title>Cyclone</title>
+<style>
+  :root {
+    --bg:       #f4f6f9;
+    --fg:       #111827;
+    --muted:    #6b7280;
+    --accent:   #1d4ed8;
+    --accent-fg:#ffffff;
+    --border:   #dde2ea;
+    --card:     #ffffff;
+    --shadow:   0 2px 6px rgba(0,0,0,.08);
+    --focus:    #dc2626;
+    --radius:   .65rem;
+    --header-bg:#111827;
+    --header-fg:#f1f5f9;
+    --danger:   #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:       #0d1117;
+      --fg:       #e6edf3;
+      --muted:    #8b96a5;
+      --accent:   #4493f8;
+      --accent-fg:#040d21;
+      --border:   #21262d;
+      --card:     #161b22;
+      --shadow:   0 2px 6px rgba(0,0,0,.45);
+      --focus:    #f0b429;
+      --header-bg:#010409;
+      --header-fg:#e6edf3;
+      --danger:   #ef4444;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+    font-size: 1.05rem;
+    line-height: 1.65;
+  }
+
+  #page-header {
+    background: var(--header-bg);
+    color: var(--header-fg);
+    border-bottom: 3px solid var(--accent);
+    padding: 1.4rem 1.5rem 1.2rem;
+  }
+  h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -.03em;
+    margin: 0;
+    color: var(--header-fg);
+  }
+
+  #page-main { max-width: 32rem; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+  /* Big connect/stop button */
+  #main-btn {
+    font: inherit;
+    font-weight: 800;
+    font-size: 1.8rem;
+    width: 100%;
+    min-height: 30vh;
+    padding: 1rem 1.5rem;
+    border-radius: var(--radius);
+    border: none;
+    background: var(--accent);
+    color: var(--accent-fg);
+    box-shadow: var(--shadow);
+    cursor: pointer;
+    transition: opacity .15s, background .15s;
+    margin-bottom: 2rem;
+  }
+  #main-btn.stop-mode { background: var(--danger); color: #fff; }
+  #main-btn:hover:not(:disabled) { opacity: .85; }
+  #main-btn:disabled { opacity: .38; cursor: default; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+  /* Workout audio */
+  #audio-controls {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: .75rem;
+    margin-bottom: 2rem;
+  }
+  #audio-controls button {
+    font: inherit;
+    font-weight: 700;
+    min-height: 3.5rem;
+    padding: .7rem 1.2rem;
+    border-radius: var(--radius);
+    border: 1.5px solid var(--border);
+    background: var(--card);
+    color: var(--fg);
+    box-shadow: var(--shadow);
+    cursor: pointer;
+  }
+  #audio-controls button:hover { opacity: .75; }
+  #play-btn {
+    background: var(--accent) !important;
+    color: var(--accent-fg) !important;
+    border-color: var(--accent) !important;
+  }
+  [hidden] { display: none !important; }
+
+  /* RPM display */
+  #rpm-display {
+    text-align: center;
+    margin: 1rem 0 2rem;
+  }
+  #rpm-display[hidden] { display: none; }
+  #rpm-label {
+    font-size: .8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--muted);
+  }
+  #rpm-value {
+    font-size: 6rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: var(--accent);
+    letter-spacing: -.04em;
+  }
+
+  /* Distance stats */
+  #stats { margin: 1.5rem 0; }
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: .75rem 1rem;
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: .6rem;
+  }
+  .stat-label { font-weight: 600; font-size: .95rem; }
+  .stat-value {
+    font-size: 1.3rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+  }
+
+  /* Reset button */
+  #reset-btn {
+    font: inherit;
+    font-weight: 600;
+    font-size: .9rem;
+    min-height: 2.8rem;
+    padding: .55rem 1.2rem;
+    border-radius: var(--radius);
+    border: 1.5px solid var(--border);
+    background: var(--card);
+    color: var(--muted);
+    box-shadow: var(--shadow);
+    cursor: pointer;
+    margin-top: 2rem;
+    width: 100%;
+    transition: opacity .15s;
+  }
+  #reset-btn:hover { opacity: .75; }
+
+  .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div id="page-header">
+  <h1>Cyclone</h1>
+</div>
+
+<div id="page-main">
+  <button id="main-btn">Connect</button>
+
+  <div id="audio-controls">
+    <button id="choose-audio-btn" type="button">Choose workout</button>
+    <input id="audio-file" type="file" accept="audio/mpeg,.mp3" hidden />
+    <button id="play-btn" type="button" hidden>Play</button>
+    <audio id="workout-audio" preload="metadata"></audio>
+  </div>
+
+  <div id="rpm-display" hidden>
+    <div id="rpm-label">Cadence (RPM)</div>
+    <div id="rpm-value">0</div>
+  </div>
+
+  <div id="stats">
+    <div class="stat-row">
+      <span class="stat-label">Today</span>
+      <span class="stat-value" id="stat-today">0.00 km</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Last 7 days</span>
+      <span class="stat-value" id="stat-week">0.00 km</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Last 30 days</span>
+      <span class="stat-value" id="stat-month">0.00 km</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">All time</span>
+      <span class="stat-value" id="stat-alltime">0.00 km</span>
+    </div>
+  </div>
+
+  <button id="reset-btn">Reset all distance data</button>
+</div>
+
+<p id="spoken" class="vh" aria-live="assertive" aria-atomic="true"></p>
+
+<script>
+"use strict";
+const FTMS = 0x1826, IBD = 0x2ad2;
+const DISTANCE_KEY = "cyclone-typhoon-distances-v1";
+const DISTANCE_MIGRATION_KEY = "cyclone-typhoon-distances-migrated-v1";
+const $ = id => document.getElementById(id);
+
+let device = null, char = null;
+let connected = false;
+let sessionDistanceM = 0;
+let lastT = null;
+let latestSpeed_kmh = 0;
+let speakTimer = null;
+let wakeLock = null;
+let audioUrl = null;
+
+async function acquireWakeLock() {
+  if (!navigator.wakeLock) return;
+  try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+function releaseWakeLock() {
+  if (wakeLock) { wakeLock.release(); wakeLock = null; }
+}
+// Re-acquire if the page becomes visible again (lock is dropped on page hide)
+document.addEventListener("visibilitychange", () => {
+  if (connected && document.visibilityState === "visible") acquireWakeLock();
+});
+
+function speak(text) {
+  if (!text) return;
+  const r = $("spoken");
+  r.textContent = "";
+  requestAnimationFrame(() => {
+    r.textContent = text;
+    // Clear after VoiceOver has had time to read it so it doesn't repeat on swipe
+    clearTimeout(speakTimer);
+    speakTimer = setTimeout(() => { r.textContent = ""; }, 6000);
+  });
+}
+
+let lastBand = null;
+function updateRpm(cadenceRpm) {
+  const band = Math.round(cadenceRpm / 5) * 5;
+  $("rpm-value").textContent = band;
+  if (band !== lastBand) {
+    lastBand = band;
+    speak(`${band}`);
+  }
+}
+
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+function parseStoredArray(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch (e) { return []; }
+}
+
+function migrateDistanceHistory() {
+  try {
+    if (localStorage.getItem(DISTANCE_MIGRATION_KEY) === "1") return;
+    const ledger = [];
+    for (const [index, session] of parseStoredArray("cyclone-sessions").entries()) {
+      const km = Number(session.km);
+      if (km > 0 && /^\d{4}-\d{2}-\d{2}$/.test(session.date || "")) {
+        ledger.push({ id: `cyclone-legacy-${index}`, source: "cyclone", endedAt: `${session.date}T12:00:00.000Z`, km });
+      }
+    }
+    for (const [index, session] of parseStoredArray("typhoon-sessions-v1").entries()) {
+      const km = Number(session.distanceKm);
+      const endedAt = session.endedAt || "";
+      if (session.completed && km > 0 && Number.isFinite(Date.parse(endedAt))) {
+        ledger.push({ id: `typhoon-${session.id || index}`, source: "typhoon", endedAt, km });
+      }
+    }
+    localStorage.setItem(DISTANCE_KEY, JSON.stringify(ledger));
+    localStorage.setItem(DISTANCE_MIGRATION_KEY, "1");
+  } catch (e) {}
+}
+
+function loadDistanceLedger() {
+  migrateDistanceHistory();
+  return parseStoredArray(DISTANCE_KEY);
+}
+
+function saveDistanceLedger(ledger) {
+  try { localStorage.setItem(DISTANCE_KEY, JSON.stringify(ledger)); } catch (e) {}
+}
+
+function recordDistance(km) {
+  if (!(km > 0)) return;
+  const ledger = loadDistanceLedger();
+  ledger.push({ id: `cyclone-${Date.now()}-${Math.random().toString(16).slice(2)}`, source: "cyclone", endedAt: new Date().toISOString(), km: Number(km.toFixed(3)) });
+  saveDistanceLedger(ledger);
+}
+
+function recordSession(km) {
+  recordDistance(km);
+}
+
+function computeStats() {
+  const sessions = loadDistanceLedger();
+  const now = Date.now();
+  const today = todayStr();
+  const weekStart = now - 7 * 24 * 60 * 60 * 1000;
+  const monthStart = now - 30 * 24 * 60 * 60 * 1000;
+  let todayKm = 0, weekKm = 0, monthKm = 0, allKm = 0;
+  for (const s of sessions) {
+    const km = Number(s.km) || 0;
+    const time = Date.parse(s.endedAt);
+    allKm += km;
+    if (Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === today) todayKm += km;
+    if (Number.isFinite(time) && time >= weekStart) weekKm += km;
+    if (Number.isFinite(time) && time >= monthStart) monthKm += km;
+  }
+  return { todayKm, weekKm, monthKm, allKm };
+}
+
+function renderStats() {
+  const { todayKm, weekKm, monthKm, allKm } = computeStats();
+  $("stat-today").textContent   = `${todayKm.toFixed(2)} km`;
+  $("stat-week").textContent    = `${weekKm.toFixed(2)} km`;
+  $("stat-month").textContent   = `${monthKm.toFixed(2)} km`;
+  $("stat-alltime").textContent = `${allKm.toFixed(2)} km`;
+}
+
+function parseBike(dv) {
+  const flags = dv.getUint16(0, true); let o = 2; const out = {};
+  const u16 = () => { const v = dv.getUint16(o, true); o += 2; return v; };
+  const s16 = () => { const v = dv.getInt16(o, true); o += 2; return v; };
+  const u24 = () => { const a = dv.getUint8(o), b = dv.getUint8(o+1), c = dv.getUint8(o+2); o += 3; return a|(b<<8)|(c<<16); };
+  const u8  = () => { const v = dv.getUint8(o); o += 1; return v; };
+  if (!(flags & 1))  out.speed_kmh   = u16() / 100;
+  if (flags & 2)     u16();
+  if (flags & 4)     out.cadence_rpm = u16() / 2;
+  if (flags & 8)     u16();
+  if (flags & 16)    out.distance_m  = u24();
+  if (flags & 32)    s16();
+  if (flags & 64)    out.power_w     = s16();
+  if (flags & 128)   s16();
+  if (flags & 256)   u16();
+  if (flags & 512)   u8();
+  return out;
+}
+
+function onData(e) {
+  const m = parseBike(e.target.value);
+  const now = performance.now() / 1000;
+  if ("speed_kmh" in m) latestSpeed_kmh = m.speed_kmh;
+  if ("cadence_rpm" in m) updateRpm(m.cadence_rpm);
+  if ("distance_m" in m) {
+    sessionDistanceM = m.distance_m;
+  } else {
+    const dt = lastT === null ? 0 : (now - lastT);
+    if (dt > 0 && dt < 5) sessionDistanceM += (latestSpeed_kmh * 1000 / 3600) * dt;
+  }
+  lastT = now;
+}
+
+function setConnectedUI() {
+  connected = true;
+  acquireWakeLock();
+  const btn = $("main-btn");
+  btn.textContent = "Stop";
+  btn.classList.add("stop-mode");
+  btn.disabled = false;
+  $("rpm-display").hidden = false;
+  lastBand = null;
+  $("rpm-value").textContent = "0";
+}
+
+function setDisconnectedUI() {
+  connected = false;
+  releaseWakeLock();
+  const btn = $("main-btn");
+  btn.textContent = "Connect";
+  btn.classList.remove("stop-mode");
+  btn.disabled = false;
+  $("rpm-display").hidden = true;
+}
+
+function endSession() {
+  const km = sessionDistanceM / 1000;
+  recordSession(km);
+  renderStats();
+  speak(`Today: ${km.toFixed(2)} kilometres`);
+}
+
+async function connect() {
+  if (!navigator.bluetooth) return;
+  try {
+    $("main-btn").disabled = true;
+    const savedName = localStorage.getItem("cyclone-device-name");
+    const filters = savedName
+      ? [{ name: savedName }, { services: [FTMS] }, { namePrefix: "Sport01" }]
+      : [{ services: [FTMS] }, { namePrefix: "Sport01" }];
+    device = await navigator.bluetooth.requestDevice({ filters, optionalServices: [FTMS] });
+    localStorage.setItem("cyclone-device-name", device.name || "");
+    device.addEventListener("gattserverdisconnected", onUnexpectedDisconnect);
+    const server = await device.gatt.connect();
+    const svc    = await server.getPrimaryService(FTMS);
+    char         = await svc.getCharacteristic(IBD);
+    await char.startNotifications();
+    char.addEventListener("characteristicvaluechanged", onData);
+    sessionDistanceM = 0;
+    lastT = null;
+    latestSpeed_kmh = 0;
+    setConnectedUI();
+  } catch (err) {
+    $("main-btn").disabled = false;
+  }
+}
+
+function stop() {
+  if (device && device.gatt && device.gatt.connected) {
+    device.removeEventListener("gattserverdisconnected", onUnexpectedDisconnect);
+    device.gatt.disconnect();
+  }
+  device = null; char = null;
+  endSession();
+  setDisconnectedUI();
+}
+
+function onUnexpectedDisconnect() {
+  endSession();
+  setDisconnectedUI();
+}
+
+function resetData() {
+  localStorage.removeItem("cyclone-sessions");
+  saveDistanceLedger([]);
+  localStorage.setItem(DISTANCE_MIGRATION_KEY, "1");
+  renderStats();
+  speak("All distance data cleared.");
+}
+
+function chooseWorkout() {
+  $("audio-file").click();
+}
+
+function loadWorkout(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+
+  const audio = $("workout-audio");
+  audio.pause();
+  if (audioUrl) URL.revokeObjectURL(audioUrl);
+  audioUrl = URL.createObjectURL(file);
+  audio.src = audioUrl;
+  audio.load();
+
+  const playBtn = $("play-btn");
+  playBtn.textContent = "Play";
+  playBtn.hidden = false;
+  playBtn.setAttribute("aria-label", `Play ${workoutName(file)}`);
+}
+
+function workoutName(file) {
+  return file.name.replace(/\.mp3$/i, "");
+}
+
+async function togglePlayback() {
+  const audio = $("workout-audio");
+  const playBtn = $("play-btn");
+  if (audio.paused) {
+    try { await audio.play(); } catch (e) {}
+  } else {
+    audio.pause();
+  }
+}
+
+function updatePlaybackButton() {
+  const audio = $("workout-audio");
+  const playBtn = $("play-btn");
+  const file = $("audio-file").files && $("audio-file").files[0];
+  const action = audio.paused ? "Play" : "Pause";
+  playBtn.textContent = action;
+  playBtn.setAttribute("aria-label", file ? `${action} ${workoutName(file)}` : action);
+}
+
+$("main-btn").addEventListener("click", () => { if (connected) stop(); else connect(); });
+$("reset-btn").addEventListener("click", resetData);
+$("choose-audio-btn").addEventListener("click", chooseWorkout);
+$("audio-file").addEventListener("change", loadWorkout);
+$("play-btn").addEventListener("click", togglePlayback);
+$("workout-audio").addEventListener("play", updatePlaybackButton);
+$("workout-audio").addEventListener("pause", updatePlaybackButton);
+$("workout-audio").addEventListener("ended", updatePlaybackButton);
+renderStats();
+</script>
+</body>
+</html>

@@ -1,0 +1,1171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<meta name="theme-color" content="#08111f" />
+<link rel="manifest" href="manifest.webmanifest" />
+<title>Typhoon</title>
+<style>
+  :root {
+    --bg: #f4f6f9;
+    --fg: #111827;
+    --muted: #6b7280;
+    --card: #ffffff;
+    --border: #dde2ea;
+    --accent: #1d4ed8;
+    --accent-fg: #ffffff;
+    --danger: #b91c1c;
+    --focus: #dc2626;
+    --header: #111827;
+    --header-fg: #f1f5f9;
+    --good: #166534;
+    --shadow: 0 2px 6px rgba(0, 0, 0, .08);
+    --radius: .65rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117;
+      --fg: #e6edf3;
+      --muted: #8b96a5;
+      --card: #161b22;
+      --border: #21262d;
+      --accent: #4493f8;
+      --accent-fg: #040d21;
+      --danger: #ef4444;
+      --focus: #f0b429;
+      --header: #010409;
+      --header-fg: #e6edf3;
+      --good: #86efac;
+      --shadow: 0 2px 6px rgba(0, 0, 0, .45);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+    font-size: 1.05rem;
+    line-height: 1.65;
+  }
+  #page-header {
+    padding: 1.4rem 1.5rem 1.2rem;
+    background: var(--header);
+    color: var(--header-fg);
+    border-bottom: 3px solid var(--accent);
+  }
+  h1 { max-width: 32rem; margin: 0 auto; font-size: 2rem; font-weight: 800; letter-spacing: -.03em; }
+  #page-main { max-width: 32rem; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  h2 { margin: 0 0 1rem; font-size: 1.4rem; }
+  button {
+    min-height: 3.5rem;
+    padding: .7rem 1.2rem;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: var(--fg);
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: var(--shadow);
+  }
+  button:hover:not(:disabled) { opacity: .8; }
+  button:disabled { opacity: .38; cursor: default; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .duration-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+  .duration-choice {
+    min-height: clamp(7rem, 25vh, 10rem);
+    font-size: 1.7rem;
+  }
+  #main-action {
+    width: 100%;
+    min-height: 30vh;
+    margin-top: 2rem;
+    border: 0;
+    background: var(--accent);
+    color: var(--accent-fg);
+    font-size: 1.8rem;
+  }
+  #workout-clock, #countdown {
+    text-align: center;
+    font-size: clamp(3.6rem, 16vw, 6.5rem);
+    line-height: 1;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    letter-spacing: -.05em;
+    margin: 2rem 0;
+  }
+  #countdown { color: var(--danger); }
+  #countdown-message {
+    min-height: 1.5em;
+    margin: -1rem 0 1.5rem;
+    text-align: center;
+    color: var(--danger);
+    font-size: 2rem;
+    font-weight: 850;
+    font-variant-numeric: tabular-nums;
+  }
+  #cadence-display { text-align: center; margin: 2rem 0; }
+  #cadence-label { color: var(--muted); font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; }
+  #live-cadence-value { color: var(--accent); font-size: 6rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  .workout-actions { display: grid; gap: 1rem; margin-top: 2rem; }
+  .workout-actions button { width: 100%; }
+  #next-song { color: var(--accent); }
+  #end-early { color: var(--danger); }
+  .comparison-list { list-style: none; margin: 0; padding: 0; }
+  .comparison-list li, .stat-row {
+    padding: .8rem 1rem;
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: .65rem;
+  }
+  .pb { color: var(--good); font-weight: 850; }
+  #distance-section { margin-top: 2rem; }
+  .stat-row { display: flex; justify-content: space-between; align-items: baseline; }
+  .stat-label { font-size: .95rem; font-weight: 600; }
+  .stat-value { color: var(--accent); font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  #post-workout-actions { display: grid; gap: .75rem; margin-top: 2rem; }
+  #another-workout { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  #reset-history, #update-weight { color: var(--muted); font-size: .9rem; }
+  #weight-editor { display: grid; gap: .75rem; }
+  #weight-editor label { font-weight: 700; }
+  #weight-kg-input {
+    width: 100%;
+    min-height: 3.5rem;
+    padding: .65rem .8rem;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: var(--fg);
+    font: inherit;
+    font-size: 1.2rem;
+  }
+  .weight-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+  audio { display: none; }
+  [hidden] { display: none !important; }
+  .vh {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<div id="spoken" class="vh" aria-live="assertive" aria-atomic="true"></div>
+<audio id="music" preload="auto"></audio>
+<audio id="music-preload" preload="auto"></audio>
+
+<div id="page-header">
+  <h1>Typhoon</h1>
+</div>
+
+<div id="page-main">
+  <section id="setup-section">
+    <div id="duration-grid" class="duration-grid">
+      <button class="duration-choice" type="button" data-minutes="3">3 minutes</button>
+      <button class="duration-choice" type="button" data-minutes="5">5 minutes</button>
+      <button class="duration-choice" type="button" data-minutes="8">8 minutes</button>
+      <button class="duration-choice" type="button" data-minutes="10">10 minutes</button>
+    </div>
+    <p id="unsupported" class="vh" hidden>This browser does not provide Web Bluetooth.</p>
+    <button id="main-action" type="button" hidden>Connect</button>
+  </section>
+
+  <section id="countdown-section" hidden>
+    <div id="countdown" aria-hidden="true">3</div>
+  </section>
+
+  <section id="workout-section" hidden>
+    <div id="workout-clock" aria-label="Time remaining">0:00</div>
+    <div id="countdown-message" aria-hidden="true" hidden></div>
+    <div id="cadence-display">
+      <div id="cadence-label">Cadence (RPM)</div>
+      <div id="live-cadence-value">0</div>
+    </div>
+    <div class="workout-actions">
+      <button id="next-song" type="button">Next song</button>
+      <button id="end-early" type="button">End workout early</button>
+    </div>
+  </section>
+
+  <section id="results-section" hidden>
+    <h2 id="results-heading" tabindex="-1">Workout results</h2>
+    <ul id="comparison-list" class="comparison-list"></ul>
+  </section>
+
+  <section id="distance-section" hidden>
+    <h2 id="distance-heading">Distance</h2>
+    <div class="stat-row"><span class="stat-label">This workout</span><span class="stat-value" id="distance-workout">0.00 kilometres</span></div>
+    <div class="stat-row"><span class="stat-label">Last 7 days</span><span class="stat-value" id="distance-week">0.00 kilometres</span></div>
+    <div class="stat-row"><span class="stat-label">Last 30 days</span><span class="stat-value" id="distance-month">0.00 kilometres</span></div>
+    <div class="stat-row"><span class="stat-label">All time</span><span class="stat-value" id="distance-all">0.00 kilometres</span></div>
+  </section>
+
+  <div id="post-workout-actions" hidden>
+    <button id="another-workout" type="button">Another workout</button>
+    <button id="reset-history" type="button">Reset all data</button>
+    <form id="weight-editor" hidden>
+      <label for="weight-kg-input">Weight in kilograms</label>
+      <input id="weight-kg-input" type="number" inputmode="decimal" min="30" max="250" step="0.1" />
+      <div class="weight-actions">
+        <button type="submit">Save weight</button>
+        <button id="cancel-weight" type="button">Cancel</button>
+      </div>
+    </form>
+    <button id="update-weight" type="button">Update weight</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const FTMS = 0x1826;
+const INDOOR_BIKE_DATA = 0x2ad2;
+const SESSION_KEY = "typhoon-sessions-v1";
+const DISTANCE_KEY = "cyclone-typhoon-distances-v1";
+const DISTANCE_MIGRATION_KEY = "cyclone-typhoon-distances-migrated-v1";
+const DEVICE_KEY = "typhoon-device-name";
+const LAST_START_KEY = "typhoon-last-start-track";
+const LAST_WORKOUT_TRACKS_KEY = "typhoon-last-workout-tracks";
+const WEIGHT_KEY = "typhoon-weight-kg";
+const DEFAULT_WEIGHT_KG = 75;
+const $ = id => document.getElementById(id);
+
+const TRACKS = [
+  { id: 1,  bpm: 96, seconds: 180.010, file: "audio/track-01-96-bpm.mp3?v=2" },
+  { id: 3,  bpm: 94, seconds: 278.570, file: "audio/track-03-94-bpm.mp3?v=2" },
+  { id: 13, bpm: 93, seconds: 216.216, file: "audio/track-13-93-bpm.mp3?v=2" },
+  { id: 14, bpm: 92, seconds: 211.383, file: "audio/track-14-92-bpm.mp3?v=2" },
+  { id: 16, bpm: 90, seconds: 244.741, file: "audio/track-16-90-bpm.mp3?v=2" }
+];
+
+const RESULT_METRICS = [
+  { key: "averagePowerW", label: "Average power", unit: "Watts", decimals: 0 },
+  { key: "topPowerW", label: "Top power", unit: "Watts", decimals: 0 },
+  { key: "averageWattsPerKg", label: "Average Watts per kilo", unit: "Watts per kilo", decimals: 2 },
+  { key: "maximumWattsPerKg", label: "Maximum Watts per kilo", unit: "Watts per kilo", decimals: 2 },
+  { key: "calories", label: "Calories", unit: "calories", decimals: 0 }
+];
+
+let device = null;
+let dataCharacteristic = null;
+let connected = false;
+let wakeLock = null;
+let audioContext = null;
+let spokenTimer = null;
+let lastCadenceBand = null;
+let cadenceSpeechBlockedUntil = 0;
+let previousTimerRemaining = 0;
+let announcedTimeMilestones = new Set();
+let lastDataTime = null;
+let lastRawDistanceM = null;
+let latest = { speedKph: 0, cadenceRpm: 0, powerW: 0, heartRate: 0 };
+
+let workoutActive = false;
+let selectedDurationSeconds = 0;
+let workoutStartPerformance = 0;
+let workoutTimer = null;
+let playbackPlan = [];
+let playbackIndex = 0;
+let heardTrackIds = [];
+let activeMusicElement = null;
+let standbyMusicElement = null;
+let musicAdvancePending = false;
+let currentWorkoutWeightKg = DEFAULT_WEIGHT_KG;
+let resetConfirmationPending = false;
+let resetConfirmationTimer = null;
+let workoutMetrics = freshWorkoutMetrics();
+let chosenMinutes = null;
+
+function freshWorkoutMetrics() {
+  return {
+    distanceM: 0,
+    sampleSeconds: 0,
+    powerWeighted: 0,
+    cadenceWeighted: 0,
+    speedWeighted: 0,
+    topPowerW: 0,
+    topCadenceRpm: 0,
+    topSpeedKph: 0,
+    calories: 0,
+    lastMetricTime: null
+  };
+}
+
+function safeGet(key, fallback = null) {
+  try { const value = localStorage.getItem(key); return value === null ? fallback : value; }
+  catch (error) { return fallback; }
+}
+function safeSet(key, value) {
+  try { localStorage.setItem(key, value); } catch (error) {}
+}
+function loadWeightKg() {
+  const weight = Number(safeGet(WEIGHT_KEY, String(DEFAULT_WEIGHT_KG)));
+  return Number.isFinite(weight) && weight >= 30 && weight <= 250 ? weight : DEFAULT_WEIGHT_KG;
+}
+function loadSessions() {
+  try {
+    const parsed = JSON.parse(safeGet(SESSION_KEY, "[]"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) { return []; }
+}
+function saveSessions(sessions) { safeSet(SESSION_KEY, JSON.stringify(sessions)); }
+
+function parseStoredArray(key) {
+  try {
+    const value = JSON.parse(safeGet(key, "[]"));
+    return Array.isArray(value) ? value : [];
+  } catch (error) { return []; }
+}
+
+function migrateDistanceHistory() {
+  if (safeGet(DISTANCE_MIGRATION_KEY, "") === "1") return;
+  const ledger = [];
+  for (const [index, session] of parseStoredArray("cyclone-sessions").entries()) {
+    const km = Number(session.km);
+    if (km > 0 && /^\d{4}-\d{2}-\d{2}$/.test(session.date || "")) {
+      ledger.push({ id: `cyclone-legacy-${index}`, source: "cyclone", endedAt: `${session.date}T12:00:00.000Z`, km });
+    }
+  }
+  for (const [index, session] of loadSessions().entries()) {
+    const km = Number(session.distanceKm);
+    const endedAt = session.endedAt || "";
+    if (session.completed && km > 0 && Number.isFinite(Date.parse(endedAt))) {
+      ledger.push({ id: `typhoon-${session.id || index}`, source: "typhoon", endedAt, km });
+    }
+  }
+  safeSet(DISTANCE_KEY, JSON.stringify(ledger));
+  safeSet(DISTANCE_MIGRATION_KEY, "1");
+}
+
+function loadDistanceLedger() {
+  migrateDistanceHistory();
+  return parseStoredArray(DISTANCE_KEY);
+}
+
+function saveDistanceLedger(ledger) { safeSet(DISTANCE_KEY, JSON.stringify(ledger)); }
+
+function recordCombinedDistance(result) {
+  const km = Number(result.distanceKm);
+  if (!(km > 0)) return;
+  const id = `typhoon-${result.id}`;
+  const ledger = loadDistanceLedger();
+  if (ledger.some(entry => entry.id === id)) return;
+  ledger.push({ id, source: "typhoon", endedAt: result.endedAt, km });
+  saveDistanceLedger(ledger);
+}
+
+function resetCombinedDistances() {
+  saveDistanceLedger([]);
+  safeSet(DISTANCE_MIGRATION_KEY, "1");
+  try { localStorage.removeItem("cyclone-sessions"); } catch (error) {}
+}
+
+function speak(text) {
+  if (!text) return;
+  const region = $("spoken");
+  region.textContent = "";
+  requestAnimationFrame(() => {
+    region.textContent = text;
+    clearTimeout(spokenTimer);
+    spokenTimer = setTimeout(() => { region.textContent = ""; }, 10000);
+  });
+}
+
+function setConnectionStatus() {}
+
+function selectedMinutes() {
+  return chosenMinutes;
+}
+
+function setSetupEnabled(enabled) {
+  for (const button of document.querySelectorAll(".duration-choice")) button.disabled = !enabled;
+  $("main-action").disabled = !enabled;
+}
+
+function updateMainAction() {
+  const button = $("main-action");
+  button.hidden = chosenMinutes === null;
+  if (button.hidden) return;
+  button.textContent = connected ? "Start" : "Connect";
+  button.removeAttribute("aria-label");
+}
+
+function chooseDuration(event) {
+  // Warm the audio route on this early user gesture so Start is immediate.
+  warmAudioOutput();
+  chosenMinutes = Number(event.currentTarget.dataset.minutes);
+  $("duration-grid").hidden = true;
+  updateMainAction();
+  $("main-action").focus();
+}
+
+function shuffle(values) {
+  const result = [...values];
+  for (let index = result.length - 1; index > 0; index--) {
+    const random = globalThis.crypto && crypto.getRandomValues
+      ? crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296
+      : Math.random();
+    const other = Math.floor(random * (index + 1));
+    [result[index], result[other]] = [result[other], result[index]];
+  }
+  return result;
+}
+
+function loadLastWorkoutTrackIds() {
+  try {
+    const ids = JSON.parse(safeGet(LAST_WORKOUT_TRACKS_KEY, "[]"));
+    return Array.isArray(ids) ? ids.map(Number).filter(Number.isFinite) : [];
+  } catch (error) { return []; }
+}
+
+function selectStartingIndex(workoutSeconds, candidates) {
+  const minutes = Math.round(workoutSeconds / 60);
+  const candidateIds = candidates.map(index => TRACKS[index].id).join("-");
+  const key = `typhoon-start-bag-v2-${minutes}-${candidateIds}`;
+  let bag;
+  try { bag = JSON.parse(safeGet(key, "[]")); } catch (error) { bag = []; }
+  if (!Array.isArray(bag)) bag = [];
+  bag = bag.filter(index => candidates.includes(index));
+  if (!bag.length) bag = shuffle(candidates);
+
+  const lastTrackId = Number(safeGet(LAST_START_KEY, "-1"));
+  if (bag.length > 1 && TRACKS[bag[0]].id === lastTrackId) [bag[0], bag[1]] = [bag[1], bag[0]];
+
+  const startingIndex = bag.shift();
+  safeSet(key, JSON.stringify(bag));
+  safeSet(LAST_START_KEY, String(TRACKS[startingIndex].id));
+  return startingIndex;
+}
+
+function createPlaybackPlan(workoutSeconds) {
+  const previousTrackIds = new Set(loadLastWorkoutTrackIds());
+  let candidates = TRACKS.map((track, index) => ({ track, index }))
+    .filter(({ track }) => !previousTrackIds.has(track.id))
+    .map(({ index }) => index);
+  if (!candidates.length) candidates = TRACKS.map((track, index) => index);
+
+  const startingIndex = selectStartingIndex(workoutSeconds, candidates);
+  let candidatePosition = candidates.indexOf(startingIndex);
+  const plan = [];
+  let remaining = workoutSeconds;
+  while (remaining > 0.1) {
+    const index = candidates[candidatePosition];
+    const track = TRACKS[index];
+    const playFor = Math.min(track.seconds, remaining);
+    plan.push({ ...track, playFor });
+    remaining -= playFor;
+    candidatePosition = (candidatePosition + 1) % candidates.length;
+  }
+  return plan;
+}
+
+function durationText(seconds) {
+  const rounded = Math.max(0, Math.ceil(seconds));
+  const minutes = Math.floor(rounded / 60);
+  const remainder = rounded % 60;
+  return `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
+function kilometresText(km) { return `${km.toFixed(2)} kilometres`; }
+
+async function acquireWakeLock() {
+  if (!navigator.wakeLock || wakeLock) return;
+  try { wakeLock = await navigator.wakeLock.request("screen"); } catch (error) {}
+}
+async function releaseWakeLock() {
+  if (!wakeLock) return;
+  try { await wakeLock.release(); } catch (error) {}
+  wakeLock = null;
+}
+document.addEventListener("visibilitychange", () => {
+  if (workoutActive && document.visibilityState === "visible") acquireWakeLock();
+});
+
+function ensureAudioContext() {
+  if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioContext.state === "suspended") audioContext.resume();
+}
+
+function warmAudioOutput() {
+  ensureAudioContext();
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  const now = audioContext.currentTime;
+  oscillator.frequency.value = 220;
+  oscillator.type = "sine";
+  gain.gain.setValueAtTime(0.0008, now);
+  oscillator.connect(gain).connect(audioContext.destination);
+  oscillator.start(now);
+  oscillator.stop(now + 0.7);
+}
+
+function beep(frequency, durationSeconds, delaySeconds = 0) {
+  ensureAudioContext();
+  const oscillator = audioContext.createOscillator();
+  const master = audioContext.createGain();
+  const start = audioContext.currentTime + delaySeconds;
+  const end = start + durationSeconds;
+  oscillator.frequency.value = frequency;
+  oscillator.type = "sine";
+  master.gain.setValueAtTime(0.0001, start);
+  master.gain.exponentialRampToValueAtTime(0.68, start + 0.03);
+  master.gain.setValueAtTime(0.68, Math.max(start + 0.04, end - 0.08));
+  master.gain.exponentialRampToValueAtTime(0.0001, end);
+  oscillator.connect(master);
+  master.connect(audioContext.destination);
+  oscillator.start(start);
+  oscillator.stop(end + 0.02);
+}
+
+function finishSignal() {
+  beep(330, 0.3);
+  beep(660, 0.65, 0.36);
+}
+
+function wait(milliseconds) { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
+
+async function runCountdown() {
+  $("setup-section").hidden = true;
+  $("results-section").hidden = true;
+  $("countdown-section").hidden = false;
+  for (const number of [3, 2, 1]) {
+    $("countdown").textContent = String(number);
+    beep(500, 0.32);
+    await wait(900);
+  }
+  $("countdown").textContent = "Go";
+  beep(1000, 0.65);
+  // Leave a full second of silence after the final tone before music begins.
+  await wait(1700);
+}
+
+async function unlockMusic(firstTrack) {
+  activeMusicElement = $("music");
+  standbyMusicElement = $("music-preload");
+  const tracksToUnlock = [firstTrack, playbackPlan[1] || firstTrack];
+  for (let index = 0; index < 2; index++) {
+    const element = index === 0 ? activeMusicElement : standbyMusicElement;
+    element.pause();
+    element.src = tracksToUnlock[index].file;
+    element.load();
+    element.muted = true;
+    try {
+      await element.play();
+      element.pause();
+      element.currentTime = 0;
+    } catch (error) {}
+  }
+}
+
+function unmuteMusic() {
+  for (const element of [activeMusicElement, standbyMusicElement]) {
+    if (element) element.muted = false;
+  }
+}
+
+function preloadFollowingTrack() {
+  const next = playbackPlan[playbackIndex + 1];
+  if (!standbyMusicElement) return;
+  if (!next) { standbyMusicElement.removeAttribute("src"); return; }
+  if (!standbyMusicElement.src.endsWith(next.file)) {
+    standbyMusicElement.src = next.file;
+    standbyMusicElement.load();
+  }
+}
+
+async function playCurrentTrack() {
+  if (!workoutActive) return;
+  const track = playbackPlan[playbackIndex];
+  if (!track) return;
+  const music = activeMusicElement || $("music");
+  if (!music.src.endsWith(track.file)) {
+    music.src = track.file;
+    music.load();
+  } else if (music.ended) {
+    music.currentTime = 0;
+  }
+  preloadFollowingTrack();
+  try {
+    await music.play();
+    if (!heardTrackIds.includes(track.id)) heardTrackIds.push(track.id);
+  }
+  catch (error) { speak("Music could not start. The workout timer is still running."); }
+}
+
+function nextEligibleTrackAfter(trackId) {
+  const previousTrackIds = new Set(loadLastWorkoutTrackIds());
+  let candidates = TRACKS.filter(track => !previousTrackIds.has(track.id));
+  if (!candidates.length) candidates = TRACKS;
+  const currentPosition = candidates.findIndex(track => track.id === trackId);
+  return candidates[(currentPosition + 1 + candidates.length) % candidates.length];
+}
+
+async function advanceMusic() {
+  if (!workoutActive || !activeMusicElement || musicAdvancePending) return;
+  musicAdvancePending = true;
+  $("next-song").disabled = true;
+  try {
+    activeMusicElement.pause();
+    if (playbackIndex + 1 >= playbackPlan.length) {
+      const next = nextEligibleTrackAfter(playbackPlan[playbackIndex].id);
+      playbackPlan.push({ ...next, playFor: next.seconds });
+    }
+    playbackIndex++;
+    [activeMusicElement, standbyMusicElement] = [standbyMusicElement, activeMusicElement];
+    await playCurrentTrack();
+  } finally {
+    musicAdvancePending = false;
+    $("next-song").disabled = false;
+  }
+}
+
+function onMusicEnded(event) {
+  if (!workoutActive || event.currentTarget !== activeMusicElement) return;
+  advanceMusic();
+}
+
+async function startWorkout() {
+  if (!connected || workoutActive) return;
+  currentWorkoutWeightKg = loadWeightKg();
+  selectedDurationSeconds = selectedMinutes() * 60;
+  playbackPlan = createPlaybackPlan(selectedDurationSeconds);
+  playbackIndex = 0;
+  heardTrackIds = [];
+  ensureAudioContext();
+  await unlockMusic(playbackPlan[0]);
+  setSetupEnabled(false);
+  await acquireWakeLock();
+  await runCountdown();
+  unmuteMusic();
+
+  workoutMetrics = freshWorkoutMetrics();
+  workoutMetrics.lastMetricTime = performance.now() / 1000;
+  lastCadenceBand = null;
+  cadenceSpeechBlockedUntil = 0;
+  selectedDurationSeconds = selectedMinutes() * 60;
+  previousTimerRemaining = selectedDurationSeconds;
+  announcedTimeMilestones = new Set();
+  workoutStartPerformance = performance.now();
+  workoutActive = true;
+  $("countdown-section").hidden = true;
+  $("workout-section").hidden = false;
+  $("workout-clock").textContent = durationText(selectedDurationSeconds);
+  $("countdown-message").textContent = "";
+  $("countdown-message").hidden = true;
+  updateLiveDisplay();
+  await playCurrentTrack();
+  setConnectionStatus("Workout running. Keep pedalling.");
+  speak("Go.");
+  workoutTimer = setInterval(updateWorkoutTimer, 100);
+}
+
+function updateWorkoutTimer() {
+  if (!workoutActive) return;
+  const elapsed = (performance.now() - workoutStartPerformance) / 1000;
+  const remaining = selectedDurationSeconds - elapsed;
+  $("workout-clock").textContent = durationText(remaining);
+  $("workout-clock").setAttribute("aria-label", `${Math.max(0, Math.ceil(remaining))} seconds remaining`);
+  if (remaining <= 0) {
+    finishWorkout(true, "Workout completed.");
+    return;
+  }
+  const crossed = timeMilestones().filter(milestone =>
+    !announcedTimeMilestones.has(milestone.seconds) &&
+    previousTimerRemaining > milestone.seconds &&
+    remaining <= milestone.seconds
+  );
+  if (crossed.length) {
+    const milestone = crossed[crossed.length - 1];
+    announcedTimeMilestones.add(milestone.seconds);
+    announceTimeMilestone(milestone.text);
+  }
+  previousTimerRemaining = remaining;
+}
+
+function timeMilestones() {
+  const milestones = [];
+  for (let minutes = selectedDurationSeconds / 60 - 1; minutes >= 1; minutes--) {
+    milestones.push({
+      seconds: minutes * 60,
+      text: `${minutes} minute${minutes === 1 ? "" : "s"} remaining.`
+    });
+  }
+  milestones.push(
+    { seconds: 30, text: "30 seconds left." },
+    { seconds: 20, text: "20 seconds." },
+    { seconds: 10, text: "10 seconds." },
+    { seconds: 5, text: "5" },
+    { seconds: 4, text: "4" },
+    { seconds: 3, text: "3" },
+    { seconds: 2, text: "2" },
+    { seconds: 1, text: "1" }
+  );
+  return milestones.sort((first, second) => second.seconds - first.seconds);
+}
+
+function announceTimeMilestone(text) {
+  const message = $("countdown-message");
+  message.textContent = text;
+  message.hidden = false;
+  cadenceSpeechBlockedUntil = performance.now() + 3500;
+  speak(text);
+}
+
+function resultFromMetrics(completed) {
+  const sampleSeconds = workoutMetrics.sampleSeconds || 1;
+  return {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    completed,
+    durationMinutes: selectedDurationSeconds / 60,
+    durationSeconds: completed ? selectedDurationSeconds : Math.max(0, (performance.now() - workoutStartPerformance) / 1000),
+    endedAt: new Date().toISOString(),
+    distanceKm: workoutMetrics.distanceM / 1000,
+    averagePowerW: workoutMetrics.powerWeighted / sampleSeconds,
+    topPowerW: workoutMetrics.topPowerW,
+    weightKg: currentWorkoutWeightKg,
+    averageWattsPerKg: (workoutMetrics.powerWeighted / sampleSeconds) / currentWorkoutWeightKg,
+    maximumWattsPerKg: workoutMetrics.topPowerW / currentWorkoutWeightKg,
+    averageCadenceRpm: workoutMetrics.cadenceWeighted / sampleSeconds,
+    topCadenceRpm: workoutMetrics.topCadenceRpm,
+    averageSpeedKph: workoutMetrics.speedWeighted / sampleSeconds,
+    topSpeedKph: workoutMetrics.topSpeedKph,
+    calories: workoutMetrics.calories,
+    startingTrackId: playbackPlan[0] ? playbackPlan[0].id : null,
+    startingBpm: playbackPlan[0] ? playbackPlan[0].bpm : null,
+    tracksHeard: [...heardTrackIds]
+  };
+}
+
+function roundedMetric(metric, value) { return Number(value).toFixed(metric.decimals); }
+function metricValueText(metric, value) { return `${roundedMetric(metric, value)} ${metric.unit}`; }
+
+function differenceText(metric, amount) {
+  const absolute = Math.abs(amount);
+  const number = roundedMetric(metric, absolute);
+  return `${number} ${metric.unit}`;
+}
+
+function metricNumber(metric, session) {
+  const stored = Number(session[metric.key]);
+  if (Number.isFinite(stored)) return stored;
+  const weight = Number(session.weightKg) > 0 ? Number(session.weightKg) : DEFAULT_WEIGHT_KG;
+  if (metric.key === "averageWattsPerKg") return (Number(session.averagePowerW) || 0) / weight;
+  if (metric.key === "maximumWattsPerKg") return (Number(session.topPowerW) || 0) / weight;
+  return 0;
+}
+
+function comparisonFor(metric, result, earlier) {
+  const value = metricNumber(metric, result);
+  if (!earlier.length) {
+    return `${metric.label}: ${metricValueText(metric, value)}. First recorded result for this workout. Personal best for ${result.durationMinutes} minutes.`;
+  }
+
+  const previous = metricNumber(metric, earlier[earlier.length - 1]);
+  const average = earlier.reduce((sum, session) => sum + metricNumber(metric, session), 0) / earlier.length;
+  const best = Math.max(...earlier.map(session => metricNumber(metric, session)));
+  const tolerance = 0.5 * Math.pow(10, -metric.decimals);
+  const versusPrevious = value - previous;
+  const versusAverage = value - average;
+  const clauses = [];
+
+  if (Math.abs(versusPrevious) <= tolerance) clauses.push("the same as your previous session");
+  else if (versusPrevious > 0) clauses.push(`${differenceText(metric, versusPrevious)} better than your previous session`);
+  else clauses.push(`${differenceText(metric, versusPrevious)} below your previous session`);
+
+  if (Math.abs(versusAverage) <= tolerance) clauses.push("the same as your average");
+  else if (versusAverage > 0) clauses.push(`${differenceText(metric, versusAverage)} above your average`);
+  else clauses.push(`${differenceText(metric, versusAverage)} below your average`);
+
+  const pb = value > best + tolerance;
+  return `${metric.label}: ${metricValueText(metric, value)}, ${clauses[0]}, ${clauses[1]}.${pb ? ` New personal best for ${result.durationMinutes} minutes.` : ""}`;
+}
+
+function renderResults(result, earlier) {
+  $("results-section").hidden = false;
+  const list = $("comparison-list");
+  list.innerHTML = "";
+  const comparisons = [];
+  if (result.completed) {
+    for (const metric of RESULT_METRICS) {
+      const text = comparisonFor(metric, result, earlier);
+      comparisons.push(text);
+      const item = document.createElement("li");
+      item.textContent = text;
+      if (/personal best/i.test(text)) item.classList.add("pb");
+      list.append(item);
+    }
+  } else {
+    const item = document.createElement("li");
+    item.textContent = "Complete the selected duration to receive comparisons and personal-best results.";
+    list.append(item);
+  }
+
+  const stats = computeDistanceStats();
+  const distanceSpeech = `Distance travelled: ${kilometresText(result.distanceKm)}. Last 7 days: ${kilometresText(stats.weekKm)}. Last 30 days: ${kilometresText(stats.monthKm)}. All time: ${kilometresText(stats.allKm)}.`;
+  const intro = result.completed ? `${result.durationMinutes} minute workout completed.` : "Workout ended early.";
+  speak([intro, ...comparisons, distanceSpeech].join(" "));
+  $("results-heading").focus();
+}
+
+async function finishWorkout(completed, statusText) {
+  if (!workoutActive) return;
+  workoutActive = false;
+  clearInterval(workoutTimer);
+  workoutTimer = null;
+  $("music").pause();
+  $("music-preload").pause();
+  safeSet(LAST_WORKOUT_TRACKS_KEY, JSON.stringify(heardTrackIds));
+  $("workout-section").hidden = true;
+  if (completed) {
+    finishSignal();
+    await wait(1100);
+  }
+  await releaseWakeLock();
+
+  const result = resultFromMetrics(completed);
+  const sessions = loadSessions();
+  const earlier = sessions.filter(session => session.completed && session.durationMinutes === result.durationMinutes);
+  if (completed) {
+    sessions.push(result);
+    saveSessions(sessions);
+    recordCombinedDistance(result);
+  }
+  renderDistanceStats(result.distanceKm);
+  renderResults(result, earlier);
+  $("distance-section").hidden = false;
+  $("post-workout-actions").hidden = false;
+  setConnectionStatus(statusText);
+}
+
+function updateLiveDisplay() {
+  $("live-cadence-value").textContent = String(Math.round(latest.cadenceRpm));
+  $("distance-workout").textContent = kilometresText(workoutMetrics.distanceM / 1000);
+}
+
+function updateCadenceSpeech(cadenceRpm) {
+  if (!workoutActive) return;
+  const now = performance.now();
+  const remaining = selectedDurationSeconds - (now - workoutStartPerformance) / 1000;
+  if (remaining <= 32.5 || now < cadenceSpeechBlockedUntil) return;
+  const approachingMinute = timeMilestones().some(milestone =>
+    milestone.seconds >= 60 && remaining > milestone.seconds && remaining <= milestone.seconds + 2.5
+  );
+  if (approachingMinute) return;
+  const band = Math.round(cadenceRpm / 5) * 5;
+  if (band !== lastCadenceBand) {
+    lastCadenceBand = band;
+    speak(String(band));
+  }
+}
+
+function parseBike(dataView) {
+  const flags = dataView.getUint16(0, true);
+  let offset = 2;
+  const output = {};
+  const u8 = () => { const value = dataView.getUint8(offset); offset += 1; return value; };
+  const u16 = () => { const value = dataView.getUint16(offset, true); offset += 2; return value; };
+  const s16 = () => { const value = dataView.getInt16(offset, true); offset += 2; return value; };
+  const u24 = () => { const value = dataView.getUint8(offset) | (dataView.getUint8(offset + 1) << 8) | (dataView.getUint8(offset + 2) << 16); offset += 3; return value; };
+  if (!(flags & 1)) output.speedKph = u16() / 100;
+  if (flags & 2) u16();
+  if (flags & 4) output.cadenceRpm = u16() / 2;
+  if (flags & 8) u16();
+  if (flags & 16) output.distanceM = u24();
+  if (flags & 32) s16();
+  if (flags & 64) output.powerW = s16();
+  if (flags & 128) s16();
+  if (flags & 256) {
+    output.energyKcal = u16();
+    u16();
+    u8();
+  }
+  if (flags & 512) output.heartRate = u8();
+  return output;
+}
+
+function onBikeData(event) {
+  let measurement;
+  try { measurement = parseBike(event.target.value); }
+  catch (error) { return; }
+  const now = performance.now() / 1000;
+  const dataDelta = lastDataTime === null ? 0 : now - lastDataTime;
+  lastDataTime = now;
+
+  if ("speedKph" in measurement) latest.speedKph = measurement.speedKph;
+  if ("cadenceRpm" in measurement) {
+    latest.cadenceRpm = measurement.cadenceRpm;
+    updateCadenceSpeech(latest.cadenceRpm);
+  }
+  if ("powerW" in measurement) latest.powerW = Math.max(0, measurement.powerW);
+  if ("heartRate" in measurement) latest.heartRate = measurement.heartRate;
+
+  if ("distanceM" in measurement) {
+    if (workoutActive && lastRawDistanceM !== null) {
+      let delta = measurement.distanceM - lastRawDistanceM;
+      if (delta < 0) delta = measurement.distanceM;
+      if (delta >= 0 && delta < 100) workoutMetrics.distanceM += delta;
+    }
+    lastRawDistanceM = measurement.distanceM;
+  } else if (workoutActive && dataDelta > 0 && dataDelta < 3) {
+    workoutMetrics.distanceM += latest.speedKph * 1000 / 3600 * dataDelta;
+  }
+
+  if (workoutActive) {
+    const metricDelta = workoutMetrics.lastMetricTime === null ? 0 : now - workoutMetrics.lastMetricTime;
+    workoutMetrics.lastMetricTime = now;
+    if (metricDelta > 0 && metricDelta < 3) {
+      workoutMetrics.sampleSeconds += metricDelta;
+      workoutMetrics.powerWeighted += latest.powerW * metricDelta;
+      workoutMetrics.cadenceWeighted += latest.cadenceRpm * metricDelta;
+      workoutMetrics.speedWeighted += latest.speedKph * metricDelta;
+      workoutMetrics.calories += latest.powerW * metricDelta / 4184 / 0.24;
+    }
+    workoutMetrics.topPowerW = Math.max(workoutMetrics.topPowerW, latest.powerW);
+    workoutMetrics.topCadenceRpm = Math.max(workoutMetrics.topCadenceRpm, latest.cadenceRpm);
+    workoutMetrics.topSpeedKph = Math.max(workoutMetrics.topSpeedKph, latest.speedKph);
+    updateLiveDisplay();
+  }
+}
+
+function reportConnectionError(error) {
+  const name = error && error.name ? error.name : "Error";
+  const message = error && error.message ? error.message : String(error);
+  if (name === "NotFoundError") setConnectionStatus("No bike was selected. Keep pedalling and try again.");
+  else if (name === "SecurityError") setConnectionStatus("Bluetooth was blocked. Open Typhoon over HTTPS in a Web Bluetooth browser.");
+  else setConnectionStatus(`Could not connect: ${message}`);
+}
+
+async function finishConnection(chosenDevice) {
+  device = chosenDevice;
+  device.addEventListener("gattserverdisconnected", onDisconnected);
+  const server = await device.gatt.connect();
+  const service = await server.getPrimaryService(FTMS);
+  dataCharacteristic = await service.getCharacteristic(INDOOR_BIKE_DATA);
+  await dataCharacteristic.startNotifications();
+  dataCharacteristic.addEventListener("characteristicvaluechanged", onBikeData);
+  connected = true;
+  lastDataTime = null;
+  lastRawDistanceM = null;
+  lastCadenceBand = null;
+  setConnectionStatus(`Connected to ${device.name || "bike"}.${chosenMinutes === null ? " Choose a workout length." : " Start when ready."}`);
+  setSetupEnabled(true);
+  updateMainAction();
+}
+
+async function connect() {
+  if (!navigator.bluetooth) {
+    $("unsupported").hidden = false;
+    setConnectionStatus("Web Bluetooth is unavailable in this browser.");
+    return;
+  }
+  try {
+    $("main-action").disabled = true;
+    setConnectionStatus("Opening the Bluetooth chooser. Keep pedalling, then select your bike.");
+    const savedName = safeGet(DEVICE_KEY, "");
+    const filters = savedName
+      ? [{ name: savedName }, { services: [FTMS] }, { namePrefix: "Sport01" }]
+      : [{ services: [FTMS] }, { namePrefix: "Sport01" }];
+    const chosen = await navigator.bluetooth.requestDevice({ filters, optionalServices: [FTMS] });
+    safeSet(DEVICE_KEY, chosen.name || "");
+    await finishConnection(chosen);
+  } catch (error) {
+    connected = false;
+    $("main-action").disabled = false;
+    reportConnectionError(error);
+    updateMainAction();
+  }
+}
+
+async function tryAutoReconnect() {
+  if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return;
+  try {
+    const devices = await navigator.bluetooth.getDevices();
+    if (!devices.length) return;
+    setConnectionStatus(`Last bike: ${devices[0].name || "remembered bike"}. Attempting to reconnect.`);
+    await finishConnection(devices[0]);
+  } catch (error) {
+    connected = false;
+    setConnectionStatus("Your remembered bike is not reachable yet. Start pedalling, then tap Connect.");
+    setSetupEnabled(true);
+    updateMainAction();
+  }
+}
+
+function onDisconnected() {
+  connected = false;
+  device = null;
+  dataCharacteristic = null;
+  if (workoutActive) finishWorkout(false, "The bike disconnected. The incomplete workout was not saved.");
+  else {
+    setConnectionStatus("Bike disconnected. Tap Connect to reconnect.");
+    setSetupEnabled(true);
+    updateMainAction();
+  }
+}
+
+function disconnect() {
+  if (device) device.removeEventListener("gattserverdisconnected", onDisconnected);
+  if (device && device.gatt && device.gatt.connected) device.gatt.disconnect();
+  connected = false;
+  device = null;
+  dataCharacteristic = null;
+  lastCadenceBand = null;
+  setConnectionStatus("Disconnected. Tap Connect when you are ready.");
+  setSetupEnabled(true);
+  updateMainAction();
+}
+
+async function scanAll() {
+  if (!navigator.bluetooth) return;
+  try {
+    setConnectionStatus("Showing every nearby Bluetooth device.");
+    const chosen = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [FTMS] });
+    setConnectionStatus(`You selected ${chosen.name || "an unnamed device"}. Return to Connect to establish the fitness-machine connection.`);
+  } catch (error) { reportConnectionError(error); }
+}
+
+function computeDistanceStats() {
+  const sessions = loadDistanceLedger();
+  const now = Date.now();
+  const weekStart = now - 7 * 24 * 60 * 60 * 1000;
+  const monthStart = now - 30 * 24 * 60 * 60 * 1000;
+  let weekKm = 0;
+  let monthKm = 0;
+  let allKm = 0;
+  for (const session of sessions) {
+    const km = Number(session.km) || 0;
+    const time = Date.parse(session.endedAt);
+    allKm += km;
+    if (Number.isFinite(time) && time >= weekStart) weekKm += km;
+    if (Number.isFinite(time) && time >= monthStart) monthKm += km;
+  }
+  return { weekKm, monthKm, allKm };
+}
+
+function renderDistanceStats(currentWorkoutKm = 0) {
+  const stats = computeDistanceStats();
+  $("distance-workout").textContent = kilometresText(currentWorkoutKm);
+  $("distance-week").textContent = kilometresText(stats.weekKm);
+  $("distance-month").textContent = kilometresText(stats.monthKm);
+  $("distance-all").textContent = kilometresText(stats.allKm);
+}
+
+function anotherWorkout() {
+  cancelResetConfirmation();
+  closeWeightEditor(false);
+  chosenMinutes = null;
+  $("duration-grid").hidden = false;
+  $("results-section").hidden = true;
+  $("distance-section").hidden = true;
+  $("post-workout-actions").hidden = true;
+  $("setup-section").hidden = false;
+  setSetupEnabled(true);
+  updateMainAction();
+  document.querySelector(".duration-choice").focus();
+}
+
+function resetHistory() {
+  if (!resetConfirmationPending) {
+    resetConfirmationPending = true;
+    $("reset-history").textContent = "Confirm reset all data";
+    speak("Tap again to confirm reset all data.");
+    clearTimeout(resetConfirmationTimer);
+    resetConfirmationTimer = setTimeout(cancelResetConfirmation, 7000);
+    return;
+  }
+  cancelResetConfirmation();
+  try { localStorage.removeItem(SESSION_KEY); } catch (error) {}
+  for (const minutes of [3, 5, 8, 10]) {
+    try { localStorage.removeItem(`typhoon-start-bag-${minutes}`); } catch (error) {}
+  }
+  try {
+    for (let index = localStorage.length - 1; index >= 0; index--) {
+      const key = localStorage.key(index);
+      if (key && key.startsWith("typhoon-start-bag-v2-")) localStorage.removeItem(key);
+    }
+  } catch (error) {}
+  try { localStorage.removeItem(LAST_START_KEY); } catch (error) {}
+  try { localStorage.removeItem(LAST_WORKOUT_TRACKS_KEY); } catch (error) {}
+  resetCombinedDistances();
+  renderDistanceStats(0);
+  speak("All Typhoon workout history and combined distance data have been cleared.");
+}
+
+function cancelResetConfirmation() {
+  resetConfirmationPending = false;
+  clearTimeout(resetConfirmationTimer);
+  resetConfirmationTimer = null;
+  $("reset-history").textContent = "Reset all data";
+}
+
+function openWeightEditor() {
+  cancelResetConfirmation();
+  const input = $("weight-kg-input");
+  input.value = String(loadWeightKg());
+  input.setCustomValidity("");
+  $("update-weight").hidden = true;
+  $("weight-editor").hidden = false;
+  input.focus();
+}
+
+function closeWeightEditor(restoreFocus = true) {
+  $("weight-editor").hidden = true;
+  $("update-weight").hidden = false;
+  if (restoreFocus) $("update-weight").focus();
+}
+
+function saveWeight(event) {
+  event.preventDefault();
+  const input = $("weight-kg-input");
+  const weight = Number(String(input.value).trim().replace(",", "."));
+  if (!Number.isFinite(weight) || weight < 30 || weight > 250) {
+    input.setCustomValidity("Enter a weight between 30 and 250 kilograms.");
+    input.reportValidity();
+    input.focus();
+    return;
+  }
+  input.setCustomValidity("");
+  safeSet(WEIGHT_KEY, String(weight));
+  closeWeightEditor();
+  speak(`Weight updated to ${weight} kilograms. It will be used for future workouts.`);
+}
+
+function init() {
+  for (const button of document.querySelectorAll(".duration-choice")) button.addEventListener("click", chooseDuration);
+  $("main-action").addEventListener("click", () => connected ? startWorkout() : connect());
+  $("next-song").addEventListener("click", advanceMusic);
+  $("end-early").addEventListener("click", () => finishWorkout(false, "Workout ended early. The incomplete result was not saved."));
+  $("another-workout").addEventListener("click", anotherWorkout);
+  $("reset-history").addEventListener("click", resetHistory);
+  $("update-weight").addEventListener("click", openWeightEditor);
+  $("weight-editor").addEventListener("submit", saveWeight);
+  $("cancel-weight").addEventListener("click", () => closeWeightEditor());
+  for (const element of [$("music"), $("music-preload")]) {
+    element.addEventListener("ended", onMusicEnded);
+    element.addEventListener("error", () => {
+      if (workoutActive) speak("The next music track could not be loaded. The workout timer will continue.");
+    });
+  }
+  if (!navigator.bluetooth) $("unsupported").hidden = false;
+  renderDistanceStats(0);
+  updateMainAction();
+  tryAutoReconnect();
+}
+
+document.addEventListener("DOMContentLoaded", init);
+</script>
+</body>
+</html>
