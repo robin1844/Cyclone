@@ -560,25 +560,32 @@ async function runCountdown() {
 async function unlockMusic(firstTrack) {
   activeMusicElement = $("music");
   standbyMusicElement = $("music-preload");
-  const tracksToUnlock = [firstTrack, playbackPlan[1] || firstTrack];
-  for (let index = 0; index < 2; index++) {
-    const element = index === 0 ? activeMusicElement : standbyMusicElement;
-    element.pause();
-    element.src = tracksToUnlock[index].file;
-    element.load();
-    element.muted = true;
-    try {
-      await element.play();
-      element.pause();
-      element.currentTime = 0;
-    } catch (error) {}
+  activeMusicElement.pause();
+  activeMusicElement.src = firstTrack.file;
+  activeMusicElement.load();
+  activeMusicElement.muted = true;
+  try {
+    await activeMusicElement.play();
+    activeMusicElement.pause();
+    activeMusicElement.currentTime = 0;
+  } catch (error) {}
+
+  // This element warms the browser cache only. It must never create a second media session.
+  standbyMusicElement.pause();
+  standbyMusicElement.muted = true;
+  const next = playbackPlan[1];
+  if (next) {
+    standbyMusicElement.src = next.file;
+    standbyMusicElement.load();
   }
 }
 
 function unmuteMusic() {
-  for (const element of [activeMusicElement, standbyMusicElement]) {
-    if (element) element.muted = false;
+  if (standbyMusicElement) {
+    standbyMusicElement.pause();
+    standbyMusicElement.muted = true;
   }
+  if (activeMusicElement) activeMusicElement.muted = false;
 }
 
 function preloadFollowingTrack() {
@@ -629,7 +636,6 @@ async function advanceMusic() {
       playbackPlan.push({ ...next, playFor: next.seconds });
     }
     playbackIndex++;
-    [activeMusicElement, standbyMusicElement] = [standbyMusicElement, activeMusicElement];
     await playCurrentTrack();
   } finally {
     musicAdvancePending = false;

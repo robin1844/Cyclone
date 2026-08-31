@@ -10,3 +10,4 @@ Keep this project dependency-free and suitable for GitHub Pages and the WebBLE i
 - Keep Typhoon performance/PB history in `typhoon-sessions-v1`.
 - Preserve one-time migration from legacy `cyclone-sessions` and completed `typhoon-sessions-v1` records.
 - Both reset flows clear the combined distance ledger; Typhoon's reset additionally clears Typhoon workout history.
+- In Typhoon, only `#music` may play or be unmuted. Keep `#music-preload` permanently paused and muted as a cache-only preloader; never swap the two elements.
