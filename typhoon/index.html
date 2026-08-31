@@ -648,6 +648,13 @@ function onMusicEnded(event) {
   advanceMusic();
 }
 
+function configureMediaControls() {
+  if (!("mediaSession" in navigator)) return;
+  try {
+    navigator.mediaSession.setActionHandler("nexttrack", () => advanceMusic());
+  } catch (error) {}
+}
+
 async function startWorkout() {
   if (!connected || workoutActive) return;
   currentWorkoutWeightKg = loadWeightKg();
@@ -1171,6 +1178,7 @@ function init() {
       if (workoutActive) speak("The next music track could not be loaded. The workout timer will continue.");
     });
   }
+  configureMediaControls();
   if (!navigator.bluetooth) $("unsupported").hidden = false;
   renderDistanceStats(0);
   updateMainAction();
