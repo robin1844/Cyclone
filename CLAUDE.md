@@ -12,3 +12,4 @@ Keep this project dependency-free and suitable for GitHub Pages and the WebBLE i
 - Both reset flows clear the combined distance ledger; Typhoon's reset additionally clears Typhoon workout history.
 - In Typhoon, only `#music` may play or be unmuted. Keep `#music-preload` permanently paused and muted as a cache-only preloader; never swap the two elements.
 - Register Typhoon's Media Session `nexttrack` action to invoke the same guarded music-advance function as the on-screen button, enabling AirPods and system media controls without introducing another audio player.
+- Typhoon's automatic plan excludes tracks heard in the preceding workout. Explicit Next song or Media Session skips use the remaining planned tracks without repetition, then every other unplayed library track before wrapping, so a user-requested skip may eventually override that exclusion.

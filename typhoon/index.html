@@ -625,17 +625,32 @@ function nextEligibleTrackAfter(trackId) {
   return candidates[(currentPosition + 1 + candidates.length) % candidates.length];
 }
 
-async function advanceMusic() {
+function nextUnheardTrackAfter(trackId) {
+  const currentPosition = TRACKS.findIndex(track => track.id === trackId);
+  const ordered = [
+    ...TRACKS.slice(currentPosition + 1),
+    ...TRACKS.slice(0, currentPosition + 1)
+  ];
+  return ordered.find(track => !heardTrackIds.includes(track.id)) || ordered[0];
+}
+
+async function advanceMusic(includeAllTracks = false) {
   if (!workoutActive || !activeMusicElement || musicAdvancePending) return;
   musicAdvancePending = true;
   $("next-song").disabled = true;
   try {
     activeMusicElement.pause();
-    if (playbackIndex + 1 >= playbackPlan.length) {
-      const next = nextEligibleTrackAfter(playbackPlan[playbackIndex].id);
-      playbackPlan.push({ ...next, playFor: next.seconds });
+    let nextIndex = playbackIndex + 1;
+    if (includeAllTracks) {
+      while (nextIndex < playbackPlan.length && heardTrackIds.includes(playbackPlan[nextIndex].id)) nextIndex++;
     }
-    playbackIndex++;
+    if (nextIndex >= playbackPlan.length) {
+      const currentTrackId = playbackPlan[playbackIndex].id;
+      const next = includeAllTracks ? nextUnheardTrackAfter(currentTrackId) : nextEligibleTrackAfter(currentTrackId);
+      playbackPlan.push({ ...next, playFor: next.seconds });
+      nextIndex = playbackPlan.length - 1;
+    }
+    playbackIndex = nextIndex;
     await playCurrentTrack();
   } finally {
     musicAdvancePending = false;
@@ -651,7 +666,7 @@ function onMusicEnded(event) {
 function configureMediaControls() {
   if (!("mediaSession" in navigator)) return;
   try {
-    navigator.mediaSession.setActionHandler("nexttrack", () => advanceMusic());
+    navigator.mediaSession.setActionHandler("nexttrack", () => advanceMusic(true));
   } catch (error) {}
 }
 
@@ -1165,7 +1180,7 @@ function init() {
   $("home-btn").addEventListener("click", () => { location.href = "../"; });
   for (const button of document.querySelectorAll(".duration-choice")) button.addEventListener("click", chooseDuration);
   $("main-action").addEventListener("click", () => connected ? startWorkout() : connect());
-  $("next-song").addEventListener("click", advanceMusic);
+  $("next-song").addEventListener("click", () => advanceMusic(true));
   $("end-early").addEventListener("click", () => finishWorkout(false, "Workout ended early. The incomplete result was not saved."));
   $("another-workout").addEventListener("click", anotherWorkout);
   $("reset-history").addEventListener("click", resetHistory);
