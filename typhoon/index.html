@@ -56,7 +56,8 @@
     color: var(--header-fg);
     border-bottom: 3px solid var(--accent);
   }
-  h1 { max-width: 32rem; margin: 0 auto; font-size: 2rem; font-weight: 800; letter-spacing: -.03em; }
+  #header-inner { max-width: 32rem; margin: 0 auto; display: flex; align-items: center; gap: 1rem; }
+  h1 { margin: 0; font-size: 2rem; font-weight: 800; letter-spacing: -.03em; }
   #page-main { max-width: 32rem; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
   h2 { margin: 0 0 1rem; font-size: 1.4rem; }
   button {
@@ -73,6 +74,7 @@
   }
   button:hover:not(:disabled) { opacity: .8; }
   button:disabled { opacity: .38; cursor: default; }
+  #home-btn { min-height: 2.6rem; padding: .35rem .8rem; background: transparent; color: var(--header-fg); box-shadow: none; }
   :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
   .duration-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
   .duration-choice {
@@ -168,7 +170,10 @@
 <audio id="music-preload" preload="auto"></audio>
 
 <div id="page-header">
-  <h1>Typhoon</h1>
+  <div id="header-inner">
+    <button id="home-btn" type="button">Back</button>
+    <h1>Typhoon</h1>
+  </div>
 </div>
 
 <div id="page-main">
@@ -1144,6 +1149,7 @@ function saveWeight(event) {
 }
 
 function init() {
+  $("home-btn").addEventListener("click", () => { location.href = "../"; });
   for (const button of document.querySelectorAll(".duration-choice")) button.addEventListener("click", chooseDuration);
   $("main-action").addEventListener("click", () => connected ? startWorkout() : connect());
   $("next-song").addEventListener("click", advanceMusic);

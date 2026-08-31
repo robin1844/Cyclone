@@ -54,6 +54,18 @@
     border-bottom: 3px solid var(--accent);
     padding: 1.4rem 1.5rem 1.2rem;
   }
+  #header-inner { max-width: 32rem; margin: 0 auto; display: flex; align-items: center; gap: 1rem; }
+  #home-btn {
+    min-height: 2.6rem;
+    padding: .35rem .8rem;
+    border: 1px solid currentColor;
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--header-fg);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
   h1 {
     font-size: 2rem;
     font-weight: 800;
@@ -180,7 +192,10 @@
 </head>
 <body>
 <div id="page-header">
-  <h1>Cyclone</h1>
+  <div id="header-inner">
+    <button id="home-btn" type="button">Back</button>
+    <h1>Cyclone</h1>
+  </div>
 </div>
 
 <div id="page-main">
@@ -504,6 +519,10 @@ function updatePlaybackButton() {
 }
 
 $("main-btn").addEventListener("click", () => { if (connected) stop(); else connect(); });
+$("home-btn").addEventListener("click", () => {
+  if (connected) stop();
+  location.href = "../";
+});
 $("reset-btn").addEventListener("click", resetData);
 $("choose-audio-btn").addEventListener("click", chooseWorkout);
 $("audio-file").addEventListener("change", loadWorkout);
