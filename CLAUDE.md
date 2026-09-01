@@ -8,6 +8,7 @@ Keep this project dependency-free and suitable for GitHub Pages and the WebBLE i
 - Preserve the independent workout engines in `cyclone/index.html` and `typhoon/index.html`.
 - Share only distance through the origin-wide `cyclone-typhoon-distances-v1` ledger.
 - Keep Typhoon performance/PB history in `typhoon-sessions-v1`.
+- Typhoon's eight-track library follows the descending order 97, 96, 95, 94, 93, 92, 90, 90 BPM.
 - Preserve one-time migration from legacy `cyclone-sessions` and completed `typhoon-sessions-v1` records.
 - Both reset flows clear the combined distance ledger; Typhoon's reset additionally clears Typhoon workout history.
 - In Typhoon, only `#music` may play or be unmuted. Keep `#music-preload` permanently paused and muted as a cache-only preloader; never swap the two elements.
