@@ -818,24 +818,17 @@ function comparisonFor(metric, result, earlier) {
     return `${metric.label}: ${metricValueText(metric, value)}. First recorded result for this workout. Personal best for ${result.durationMinutes} minutes.`;
   }
 
-  const previous = metricNumber(metric, earlier[earlier.length - 1]);
   const average = earlier.reduce((sum, session) => sum + metricNumber(metric, session), 0) / earlier.length;
   const best = Math.max(...earlier.map(session => metricNumber(metric, session)));
   const tolerance = 0.5 * Math.pow(10, -metric.decimals);
-  const versusPrevious = value - previous;
   const versusAverage = value - average;
-  const clauses = [];
-
-  if (Math.abs(versusPrevious) <= tolerance) clauses.push("the same as your previous session");
-  else if (versusPrevious > 0) clauses.push(`${differenceText(metric, versusPrevious)} better than your previous session`);
-  else clauses.push(`${differenceText(metric, versusPrevious)} below your previous session`);
-
-  if (Math.abs(versusAverage) <= tolerance) clauses.push("the same as your average");
-  else if (versusAverage > 0) clauses.push(`${differenceText(metric, versusAverage)} above your average`);
-  else clauses.push(`${differenceText(metric, versusAverage)} below your average`);
+  let averageClause;
+  if (Math.abs(versusAverage) <= tolerance) averageClause = "the same as your average";
+  else if (versusAverage > 0) averageClause = `${differenceText(metric, versusAverage)} above your average`;
+  else averageClause = `${differenceText(metric, versusAverage)} below your average`;
 
   const pb = value > best + tolerance;
-  return `${metric.label}: ${metricValueText(metric, value)}, ${clauses[0]}, ${clauses[1]}.${pb ? ` New personal best for ${result.durationMinutes} minutes.` : ""}`;
+  return `${metric.label}: ${metricValueText(metric, value)}, ${averageClause}.${pb ? ` New personal best for ${result.durationMinutes} minutes.` : ""}`;
 }
 
 function renderResults(result, earlier) {

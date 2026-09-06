@@ -246,8 +246,10 @@ const $ = id => document.getElementById(id);
 
 let device = null, char = null;
 let connected = false;
+let sessionActive = false;
 let sessionDistanceM = 0;
 let lastT = null;
+let lastRawDistanceM = null;
 let latestSpeed_kmh = 0;
 let speakTimer = null;
 let wakeLock = null;
@@ -262,7 +264,7 @@ function releaseWakeLock() {
 }
 // Re-acquire if the page becomes visible again (lock is dropped on page hide)
 document.addEventListener("visibilitychange", () => {
-  if (connected && document.visibilityState === "visible") acquireWakeLock();
+  if (sessionActive && document.visibilityState === "visible") acquireWakeLock();
 });
 
 function speak(text) {
@@ -387,18 +389,22 @@ function onData(e) {
   const m = parseBike(e.target.value);
   const now = performance.now() / 1000;
   if ("speed_kmh" in m) latestSpeed_kmh = m.speed_kmh;
-  if ("cadence_rpm" in m) updateRpm(m.cadence_rpm);
+  if (sessionActive && "cadence_rpm" in m) updateRpm(m.cadence_rpm);
   if ("distance_m" in m) {
-    sessionDistanceM = m.distance_m;
-  } else {
+    if (sessionActive && lastRawDistanceM !== null) {
+      const delta = m.distance_m - lastRawDistanceM;
+      if (delta >= 0) sessionDistanceM += delta;
+    }
+    lastRawDistanceM = m.distance_m;
+  } else if (sessionActive) {
     const dt = lastT === null ? 0 : (now - lastT);
     if (dt > 0 && dt < 5) sessionDistanceM += (latestSpeed_kmh * 1000 / 3600) * dt;
   }
   lastT = now;
 }
 
-function setConnectedUI() {
-  connected = true;
+function setSessionUI() {
+  sessionActive = true;
   acquireWakeLock();
   const btn = $("main-btn");
   btn.textContent = "Stop";
@@ -409,8 +415,19 @@ function setConnectedUI() {
   $("rpm-value").textContent = "0";
 }
 
+function setReadyUI() {
+  sessionActive = false;
+  releaseWakeLock();
+  const btn = $("main-btn");
+  btn.textContent = "Start";
+  btn.classList.remove("stop-mode");
+  btn.disabled = false;
+  $("rpm-display").hidden = true;
+}
+
 function setDisconnectedUI() {
   connected = false;
+  sessionActive = false;
   releaseWakeLock();
   const btn = $("main-btn");
   btn.textContent = "Connect";
@@ -424,6 +441,18 @@ function endSession() {
   recordSession(km);
   renderStats();
   speak(`Today: ${km.toFixed(2)} kilometres`);
+}
+
+function startSession() {
+  if (!connected || !device || !device.gatt || !device.gatt.connected) {
+    setDisconnectedUI();
+    return;
+  }
+  sessionDistanceM = 0;
+  lastT = null;
+  lastRawDistanceM = null;
+  latestSpeed_kmh = 0;
+  setSessionUI();
 }
 
 async function connect() {
@@ -442,28 +471,36 @@ async function connect() {
     char         = await svc.getCharacteristic(IBD);
     await char.startNotifications();
     char.addEventListener("characteristicvaluechanged", onData);
-    sessionDistanceM = 0;
-    lastT = null;
-    latestSpeed_kmh = 0;
-    setConnectedUI();
+    connected = true;
+    startSession();
   } catch (err) {
+    connected = false;
     $("main-btn").disabled = false;
   }
 }
 
 function stop() {
-  if (device && device.gatt && device.gatt.connected) {
-    device.removeEventListener("gattserverdisconnected", onUnexpectedDisconnect);
-    device.gatt.disconnect();
-  }
-  device = null; char = null;
+  if (!sessionActive) return;
   endSession();
-  setDisconnectedUI();
+  if (device && device.gatt && device.gatt.connected) setReadyUI();
+  else setDisconnectedUI();
 }
 
 function onUnexpectedDisconnect() {
-  endSession();
+  if (sessionActive) endSession();
+  device = null;
+  char = null;
   setDisconnectedUI();
+}
+
+function leaveCyclone() {
+  if (sessionActive) endSession();
+  if (device) device.removeEventListener("gattserverdisconnected", onUnexpectedDisconnect);
+  if (device && device.gatt && device.gatt.connected) device.gatt.disconnect();
+  device = null;
+  char = null;
+  setDisconnectedUI();
+  location.href = "../";
 }
 
 function resetData() {
@@ -518,11 +555,12 @@ function updatePlaybackButton() {
   playBtn.setAttribute("aria-label", file ? `${action} ${workoutName(file)}` : action);
 }
 
-$("main-btn").addEventListener("click", () => { if (connected) stop(); else connect(); });
-$("home-btn").addEventListener("click", () => {
-  if (connected) stop();
-  location.href = "../";
+$("main-btn").addEventListener("click", () => {
+  if (sessionActive) stop();
+  else if (connected) startSession();
+  else connect();
 });
+$("home-btn").addEventListener("click", leaveCyclone);
 $("reset-btn").addEventListener("click", resetData);
 $("choose-audio-btn").addEventListener("click", chooseWorkout);
 $("audio-file").addEventListener("change", loadWorkout);
