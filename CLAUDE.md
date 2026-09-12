@@ -7,6 +7,7 @@ Keep this project dependency-free and suitable for GitHub Pages and the WebBLE i
 - Keep the small header Back button visible throughout both apps; it always returns directly to the root launcher.
 - Preserve the independent workout engines in `cyclone/index.html` and `typhoon/index.html`.
 - Cyclone Stop ends and records only the current session while retaining a live bike connection; its main button becomes Start until the GATT connection is actually lost.
+- On entry, Cyclone silently reconnects to a previously authorised nearby bike, including one just used by Typhoon, and changes its main button to Start only after FTMS notifications are active. Connect remains the fallback when silent reconnection is unavailable or fails.
 - Share only distance through the origin-wide `cyclone-typhoon-distances-v1` ledger.
 - Keep Typhoon performance/PB history in `typhoon-sessions-v1`.
 - Typhoon's seventeen-track library follows descending BPM order from 97 to 90.

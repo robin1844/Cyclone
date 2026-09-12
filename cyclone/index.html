@@ -455,27 +455,51 @@ function startSession() {
   setSessionUI();
 }
 
+async function finishConnection(chosenDevice) {
+  device = chosenDevice;
+  device.addEventListener("gattserverdisconnected", onUnexpectedDisconnect);
+  const server = await device.gatt.connect();
+  const svc = await server.getPrimaryService(FTMS);
+  char = await svc.getCharacteristic(IBD);
+  await char.startNotifications();
+  char.addEventListener("characteristicvaluechanged", onData);
+  connected = true;
+}
+
 async function connect() {
   if (!navigator.bluetooth) return;
   try {
     $("main-btn").disabled = true;
-    const savedName = localStorage.getItem("cyclone-device-name");
+    const savedName = localStorage.getItem("typhoon-device-name") || localStorage.getItem("cyclone-device-name");
     const filters = savedName
       ? [{ name: savedName }, { services: [FTMS] }, { namePrefix: "Sport01" }]
       : [{ services: [FTMS] }, { namePrefix: "Sport01" }];
-    device = await navigator.bluetooth.requestDevice({ filters, optionalServices: [FTMS] });
-    localStorage.setItem("cyclone-device-name", device.name || "");
-    device.addEventListener("gattserverdisconnected", onUnexpectedDisconnect);
-    const server = await device.gatt.connect();
-    const svc    = await server.getPrimaryService(FTMS);
-    char         = await svc.getCharacteristic(IBD);
-    await char.startNotifications();
-    char.addEventListener("characteristicvaluechanged", onData);
-    connected = true;
+    const chosen = await navigator.bluetooth.requestDevice({ filters, optionalServices: [FTMS] });
+    localStorage.setItem("cyclone-device-name", chosen.name || "");
+    await finishConnection(chosen);
     startSession();
   } catch (err) {
     connected = false;
     $("main-btn").disabled = false;
+  }
+}
+
+async function tryAutoReconnect() {
+  if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return;
+  try {
+    const devices = await navigator.bluetooth.getDevices();
+    if (!devices.length) return;
+    const savedName = localStorage.getItem("cyclone-device-name");
+    const chosen = devices.find(candidate => candidate.name === savedName) || devices[0];
+    $("main-btn").disabled = true;
+    await finishConnection(chosen);
+    localStorage.setItem("cyclone-device-name", chosen.name || "");
+    setReadyUI();
+  } catch (err) {
+    if (device) device.removeEventListener("gattserverdisconnected", onUnexpectedDisconnect);
+    device = null;
+    char = null;
+    setDisconnectedUI();
   }
 }
 
@@ -569,6 +593,7 @@ $("workout-audio").addEventListener("play", updatePlaybackButton);
 $("workout-audio").addEventListener("pause", updatePlaybackButton);
 $("workout-audio").addEventListener("ended", updatePlaybackButton);
 renderStats();
+tryAutoReconnect();
 </script>
 </body>
 </html>
