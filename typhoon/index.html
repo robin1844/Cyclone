@@ -116,7 +116,6 @@
   .workout-actions { display: grid; gap: 1rem; margin-top: 2rem; }
   .workout-actions button { width: 100%; }
   #next-song { color: var(--accent); }
-  #end-early { color: var(--danger); }
   .comparison-list { list-style: none; margin: 0; padding: 0; }
   .comparison-list li, .stat-row {
     padding: .8rem 1rem;
@@ -201,7 +200,6 @@
     </div>
     <div class="workout-actions">
       <button id="next-song" type="button">Next song</button>
-      <button id="end-early" type="button">End workout early</button>
     </div>
   </section>
 
@@ -416,7 +414,7 @@ function updateMainAction() {
   const button = $("main-action");
   button.hidden = chosenMinutes === null;
   if (button.hidden) return;
-  button.textContent = connected ? "Start" : "Connect";
+  button.textContent = workoutActive ? "Stop" : connected ? "Start" : "Connect";
   button.removeAttribute("aria-label");
 }
 
@@ -705,6 +703,8 @@ async function startWorkout() {
   announcedTimeMilestones = new Set();
   workoutStartPerformance = performance.now();
   workoutActive = true;
+  updateMainAction();
+  $("main-action").disabled = false;
   $("countdown-section").hidden = true;
   $("workout-section").hidden = false;
   $("workout-clock").textContent = durationText(selectedDurationSeconds);
@@ -861,6 +861,8 @@ function renderResults(result, earlier) {
 async function finishWorkout(completed, statusText) {
   if (!workoutActive) return;
   workoutActive = false;
+  updateMainAction();
+  $("main-action").disabled = true;
   clearInterval(workoutTimer);
   workoutTimer = null;
   $("music").pause();
@@ -1184,9 +1186,12 @@ function saveWeight(event) {
 function init() {
   $("home-btn").addEventListener("click", () => { location.href = "../"; });
   for (const button of document.querySelectorAll(".duration-choice")) button.addEventListener("click", chooseDuration);
-  $("main-action").addEventListener("click", () => connected ? startWorkout() : connect());
+  $("main-action").addEventListener("click", () => {
+    if (workoutActive) finishWorkout(false, "Workout ended early. The incomplete result was not saved.");
+    else if (connected) startWorkout();
+    else connect();
+  });
   $("next-song").addEventListener("click", () => advanceMusic(true));
-  $("end-early").addEventListener("click", () => finishWorkout(false, "Workout ended early. The incomplete result was not saved."));
   $("another-workout").addEventListener("click", anotherWorkout);
   $("reset-history").addEventListener("click", resetHistory);
   $("update-weight").addEventListener("click", openWeightEditor);

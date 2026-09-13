@@ -6,7 +6,7 @@ Keep this project dependency-free and suitable for GitHub Pages and the WebBLE i
 - Do not add a Main landmark or other visible content to the launcher.
 - Keep the small header Back button visible throughout both apps; it always returns directly to the root launcher.
 - Preserve the independent workout engines in `cyclone/index.html` and `typhoon/index.html`.
-- Cyclone Stop ends and records only the current session while retaining a live bike connection; its main button becomes Start until the GATT connection is actually lost.
+- Cyclone Connect establishes the bike connection and leaves the app ready; Start begins data capture and restarts the selected audio from the beginning, while Stop records the session, stops audio, and retains the live connection for another Start.
 - On entry, Cyclone silently reconnects to a previously authorised nearby bike, including one just used by Typhoon, and changes its main button to Start only after FTMS notifications are active. Connect remains the fallback when silent reconnection is unavailable or fails.
 - Share only distance through the origin-wide `cyclone-typhoon-distances-v1` ledger.
 - Keep Typhoon performance/PB history in `typhoon-sessions-v1`.
@@ -15,5 +15,6 @@ Keep this project dependency-free and suitable for GitHub Pages and the WebBLE i
 - Preserve one-time migration from legacy `cyclone-sessions` and completed `typhoon-sessions-v1` records.
 - Both reset flows clear the combined distance ledger; Typhoon's reset additionally clears Typhoon workout history.
 - In Typhoon, only `#music` may play or be unmuted. Keep `#music-preload` permanently paused and muted as a cache-only preloader; never swap the two elements.
+- Typhoon's large action button becomes Stop during a workout and is the sole early-exit control.
 - Register Typhoon's Media Session `nexttrack` action to invoke the same guarded music-advance function as the on-screen button, enabling AirPods and system media controls without introducing another audio player.
 - Typhoon's automatic plan excludes tracks heard in the preceding workout. Explicit Next song or Media Session skips use the remaining planned tracks without repetition, then every other unplayed library track before wrapping, so a user-requested skip may eventually override that exclusion.

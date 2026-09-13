@@ -443,7 +443,7 @@ function endSession() {
   speak(`Today: ${km.toFixed(2)} kilometres`);
 }
 
-function startSession() {
+async function startSession() {
   if (!connected || !device || !device.gatt || !device.gatt.connected) {
     setDisconnectedUI();
     return;
@@ -453,6 +453,11 @@ function startSession() {
   lastRawDistanceM = null;
   latestSpeed_kmh = 0;
   setSessionUI();
+  const audio = $("workout-audio");
+  if (audio.src) {
+    audio.currentTime = 0;
+    try { await audio.play(); } catch (e) {}
+  }
 }
 
 async function finishConnection(chosenDevice) {
@@ -477,7 +482,7 @@ async function connect() {
     const chosen = await navigator.bluetooth.requestDevice({ filters, optionalServices: [FTMS] });
     localStorage.setItem("cyclone-device-name", chosen.name || "");
     await finishConnection(chosen);
-    startSession();
+    setReadyUI();
   } catch (err) {
     connected = false;
     $("main-btn").disabled = false;
@@ -505,6 +510,9 @@ async function tryAutoReconnect() {
 
 function stop() {
   if (!sessionActive) return;
+  const audio = $("workout-audio");
+  audio.pause();
+  if (audio.src) audio.currentTime = 0;
   endSession();
   if (device && device.gatt && device.gatt.connected) setReadyUI();
   else setDisconnectedUI();
