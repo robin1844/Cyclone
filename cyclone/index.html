@@ -254,6 +254,8 @@ let latestSpeed_kmh = 0;
 let speakTimer = null;
 let wakeLock = null;
 let audioUrl = null;
+let reconnectTimer = null;
+let reconnectAttempting = false;
 
 async function acquireWakeLock() {
   if (!navigator.wakeLock) return;
@@ -436,6 +438,15 @@ function setDisconnectedUI() {
   $("rpm-display").hidden = true;
 }
 
+function setInterruptedUI() {
+  connected = false;
+  const btn = $("main-btn");
+  btn.textContent = "Stop";
+  btn.classList.add("stop-mode");
+  btn.disabled = false;
+  $("rpm-display").hidden = false;
+}
+
 function endSession() {
   const km = sessionDistanceM / 1000;
   recordSession(km);
@@ -461,7 +472,11 @@ async function startSession() {
 }
 
 async function finishConnection(chosenDevice) {
+  if (device && device !== chosenDevice) {
+    device.removeEventListener("gattserverdisconnected", onUnexpectedDisconnect);
+  }
   device = chosenDevice;
+  device.removeEventListener("gattserverdisconnected", onUnexpectedDisconnect);
   device.addEventListener("gattserverdisconnected", onUnexpectedDisconnect);
   const server = await device.gatt.connect();
   const svc = await server.getPrimaryService(FTMS);
@@ -469,6 +484,39 @@ async function finishConnection(chosenDevice) {
   await char.startNotifications();
   char.addEventListener("characteristicvaluechanged", onData);
   connected = true;
+}
+
+function cancelReconnect() {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+}
+
+function scheduleReconnect(delay = 1500) {
+  cancelReconnect();
+  if (!sessionActive || connected) return;
+  reconnectTimer = setTimeout(reconnectSession, delay);
+}
+
+async function reconnectSession() {
+  if (!sessionActive || connected || reconnectAttempting || !device) return;
+  reconnectAttempting = true;
+  try {
+    await finishConnection(device);
+    if (sessionActive) {
+      setSessionUI();
+      speak("Bike reconnected.");
+    } else {
+      setReadyUI();
+    }
+  } catch (err) {
+    connected = false;
+    if (sessionActive) {
+      setInterruptedUI();
+      scheduleReconnect(3000);
+    }
+  } finally {
+    reconnectAttempting = false;
+  }
 }
 
 async function connect() {
@@ -510,6 +558,7 @@ async function tryAutoReconnect() {
 
 function stop() {
   if (!sessionActive) return;
+  cancelReconnect();
   const audio = $("workout-audio");
   audio.pause();
   if (audio.src) audio.currentTime = 0;
@@ -519,13 +568,20 @@ function stop() {
 }
 
 function onUnexpectedDisconnect() {
-  if (sessionActive) endSession();
-  device = null;
   char = null;
-  setDisconnectedUI();
+  connected = false;
+  if (sessionActive) {
+    setInterruptedUI();
+    speak("Bike disconnected. Trying to reconnect.");
+    scheduleReconnect();
+  } else {
+    device = null;
+    setDisconnectedUI();
+  }
 }
 
 function leaveCyclone() {
+  cancelReconnect();
   if (sessionActive) endSession();
   if (device) device.removeEventListener("gattserverdisconnected", onUnexpectedDisconnect);
   if (device && device.gatt && device.gatt.connected) device.gatt.disconnect();

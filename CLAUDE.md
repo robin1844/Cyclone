@@ -7,6 +7,7 @@ Keep this project dependency-free and suitable for GitHub Pages and the WebBLE i
 - Keep the small header Back button visible throughout both apps; it always returns directly to the root launcher.
 - Preserve the independent workout engines in `cyclone/index.html` and `typhoon/index.html`.
 - Cyclone Connect establishes the bike connection and leaves the app ready; Start begins data capture and restarts the selected audio from the beginning, while Stop records the session, stops audio, and retains the live connection for another Start.
+- If Cyclone loses GATT during an active workout, keep the session and audio running, leave Stop available, and retry the same device automatically. Reconnection resumes bike data in the existing session and must never restart the selected audio.
 - On entry, Cyclone silently reconnects to a previously authorised nearby bike, including one just used by Typhoon, and changes its main button to Start only after FTMS notifications are active. Connect remains the fallback when silent reconnection is unavailable or fails.
 - Share only distance through the origin-wide `cyclone-typhoon-distances-v1` ledger.
 - Keep Typhoon performance/PB history in `typhoon-sessions-v1`.
