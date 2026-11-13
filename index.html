@@ -5,52 +5,199 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light dark" />
 <title>Cyclone</title>
-<style>
-  :root {
-    --bg: #f4f6f9;
-    --fg: #111827;
-    --accent: #1d4ed8;
-    --accent-fg: #ffffff;
-    --second: #111827;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #05080d;
-      --fg: #f3f4f6;
-      --accent: #60a5fa;
-      --accent-fg: #07111f;
-      --second: #161b22;
-    }
-  }
-  * { box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; margin: 0; }
-  body { background: var(--bg); }
-  #launcher {
-    display: grid;
-    grid-template-rows: repeat(3, 1fr);
-    width: 100%;
-    min-height: 100%;
-  }
-  button {
-    width: 100%;
-    min-height: calc(100vh / 3);
-    border: 0;
-    border-radius: 0;
-    background: var(--accent);
-    color: var(--accent-fg);
-    font: 900 clamp(2.5rem, 12vw, 6rem)/1 system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
-    cursor: pointer;
-  }
-  button:nth-child(2) { background: #0f766e; color: #ffffff; }
-  button:last-child { background: var(--second); color: var(--fg); }
-  button:focus-visible { outline: .35rem solid #f0b429; outline-offset: -.35rem; }
-</style>
+<link rel="stylesheet" href="app.css?v=b545cc4811be" />
 </head>
 <body>
 <div id="launcher">
-  <button type="button" onclick="location.href='cyclone/'">Cyclone</button>
-  <button type="button" onclick="location.href='typhoon/'">Typhoon</button>
-  <button type="button" onclick="location.href='mistral/'">Mistral</button>
+  <button type="button" id="open-cyclone" data-section="cyclone">Cyclone</button>
+  <button type="button" id="open-typhoon" data-section="typhoon">Typhoon</button>
+  <button type="button" id="open-mistral" data-section="mistral">Mistral</button>
 </div>
+<div id="cyclone-section" class="workout-section" hidden>
+<div id="cyclone-page-header">
+  <div id="cyclone-header-inner">
+    <button id="cyclone-home-btn" type="button">Back</button>
+    <h1>Cyclone</h1>
+  </div>
+</div>
+
+<div id="cyclone-page-main">
+  <button id="cyclone-main-btn">Connect</button>
+
+  <div id="cyclone-audio-controls">
+    <button id="cyclone-choose-audio-btn" type="button">Choose workout</button>
+    <input id="cyclone-audio-file" type="file" accept="audio/mpeg,.mp3" hidden />
+    <button id="cyclone-play-btn" type="button" hidden>Play</button>
+    <audio id="cyclone-workout-audio" preload="metadata"></audio>
+    <p id="cyclone-audio-status" hidden></p>
+  </div>
+
+  <div id="cyclone-rpm-display" hidden>
+    <div id="cyclone-rpm-label">Cadence (RPM)</div>
+    <div id="cyclone-rpm-value">0</div>
+  </div>
+
+  <div id="cyclone-stats">
+    <div class="stat-row">
+      <span class="stat-label">Today</span>
+      <span class="stat-value" id="cyclone-stat-today">0.00 km</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Last 7 days</span>
+      <span class="stat-value" id="cyclone-stat-week">0.00 km</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Last 30 days</span>
+      <span class="stat-value" id="cyclone-stat-month">0.00 km</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">All time</span>
+      <span class="stat-value" id="cyclone-stat-alltime">0.00 km</span>
+    </div>
+  </div>
+
+  <button id="cyclone-reset-btn">Reset all distance data</button>
+</div>
+
+<p id="cyclone-spoken" class="vh" aria-live="assertive" aria-atomic="true"></p>
+</div>
+
+<div id="typhoon-section" class="workout-section" hidden>
+<div id="typhoon-spoken" class="vh" aria-live="assertive" aria-atomic="true"></div>
+<audio id="typhoon-music" preload="auto"></audio>
+<audio id="typhoon-music-preload" preload="auto"></audio>
+
+<div id="typhoon-page-header">
+  <div id="typhoon-header-inner">
+    <button id="typhoon-home-btn" type="button">Back</button>
+    <h1>Typhoon</h1>
+  </div>
+</div>
+
+<div id="typhoon-page-main">
+  <section id="typhoon-setup-section">
+    <div id="typhoon-duration-grid" class="duration-grid">
+      <button class="duration-choice" type="button" data-minutes="3">3 minutes</button>
+      <button class="duration-choice" type="button" data-minutes="5">5 minutes</button>
+      <button class="duration-choice" type="button" data-minutes="8">8 minutes</button>
+      <button class="duration-choice" type="button" data-minutes="10">10 minutes</button>
+    </div>
+    <p id="typhoon-unsupported" class="vh" hidden>This browser does not provide Web Bluetooth.</p>
+  </section>
+
+  <button id="typhoon-main-action" type="button" hidden>Connect</button>
+
+  <section id="typhoon-countdown-section" hidden>
+    <div id="typhoon-countdown" aria-hidden="true">3</div>
+  </section>
+
+  <section id="typhoon-workout-section" hidden>
+    <div id="typhoon-workout-clock" aria-label="Time remaining">0:00</div>
+    <div id="typhoon-countdown-message" aria-hidden="true" hidden></div>
+    <div id="typhoon-cadence-display">
+      <div id="typhoon-cadence-label">Cadence (RPM)</div>
+      <div id="typhoon-live-cadence-value">0</div>
+    </div>
+    <div class="workout-actions">
+      <button id="typhoon-next-song" type="button">Next song</button>
+    </div>
+  </section>
+
+  <section id="typhoon-results-section" hidden>
+    <h2 id="typhoon-results-heading" tabindex="-1">Workout results</h2>
+    <ul id="typhoon-comparison-list" class="comparison-list"></ul>
+  </section>
+
+  <section id="typhoon-distance-section" hidden>
+    <h2 id="typhoon-distance-heading">Distance</h2>
+    <div class="stat-row"><span class="stat-label">This workout</span><span class="stat-value" id="typhoon-distance-workout">0.00 kilometres</span></div>
+    <div class="stat-row"><span class="stat-label">Last 7 days</span><span class="stat-value" id="typhoon-distance-week">0.00 kilometres</span></div>
+    <div class="stat-row"><span class="stat-label">Last 30 days</span><span class="stat-value" id="typhoon-distance-month">0.00 kilometres</span></div>
+    <div class="stat-row"><span class="stat-label">All time</span><span class="stat-value" id="typhoon-distance-all">0.00 kilometres</span></div>
+  </section>
+
+  <div id="typhoon-post-workout-actions" hidden>
+    <button id="typhoon-another-workout" type="button">Another workout</button>
+    <button id="typhoon-reset-history" type="button">Reset all data</button>
+    <form id="typhoon-weight-editor" hidden>
+      <label for="typhoon-weight-kg-input">Weight in kilograms</label>
+      <input id="typhoon-weight-kg-input" type="number" inputmode="decimal" min="30" max="250" step="0.1" />
+      <div class="weight-actions">
+        <button type="submit">Save weight</button>
+        <button id="typhoon-cancel-weight" type="button">Cancel</button>
+      </div>
+    </form>
+    <button id="typhoon-update-weight" type="button">Update weight</button>
+  </div>
+</div>
+</div>
+
+<div id="mistral-section" class="workout-section" hidden>
+<div id="mistral-page-header">
+  <div id="mistral-header-inner">
+    <button id="mistral-home-btn" type="button">Back</button>
+    <h1>Mistral</h1>
+  </div>
+</div>
+
+<div id="mistral-page-main">
+  <div id="mistral-distance-setup">
+    <div class="distance-grid" aria-label="Choose distance">
+      <button class="distance-choice" type="button" data-distance="5">5 miles</button>
+      <button class="distance-choice" type="button" data-distance="10">10 miles</button>
+      <button class="distance-choice" type="button" data-distance="15">15 miles</button>
+      <button class="distance-choice" type="button" data-distance="20">20 miles</button>
+      <button class="distance-choice" type="button" data-distance="25">25 miles</button>
+      <button class="distance-choice" type="button" data-distance="30">30 miles</button>
+    </div>
+    <button id="mistral-unit-btn" type="button">Switch to KM</button>
+  </div>
+  <div id="mistral-workout-screen" hidden>
+  <button id="mistral-main-btn">Connect</button>
+
+  <div id="mistral-audio-controls">
+    <button id="mistral-choose-audio-btn" type="button">Choose workout</button>
+    <input id="mistral-audio-file" type="file" accept="audio/mpeg,.mp3" hidden />
+    <button id="mistral-play-btn" type="button" hidden>Play</button>
+    <audio id="mistral-workout-audio" preload="metadata"></audio>
+    <p id="mistral-audio-status" hidden></p>
+  </div>
+
+  <p id="mistral-distance-progress"></p>
+
+  <div id="mistral-rpm-display" hidden>
+    <div id="mistral-rpm-label">Cadence (RPM)</div>
+    <div id="mistral-rpm-value">0</div>
+  </div>
+
+  <div id="mistral-stats">
+    <div class="stat-row">
+      <span class="stat-label">Today</span>
+      <span class="stat-value" id="mistral-stat-today">0.00 km</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Last 7 days</span>
+      <span class="stat-value" id="mistral-stat-week">0.00 km</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Last 30 days</span>
+      <span class="stat-value" id="mistral-stat-month">0.00 km</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">All time</span>
+      <span class="stat-value" id="mistral-stat-alltime">0.00 km</span>
+    </div>
+  </div>
+
+  <button id="mistral-reset-btn">Reset all distance data</button>
+  <button id="mistral-change-distance-btn" type="button">Choose distance</button>
+  </div>
+</div>
+
+<p id="mistral-cadence-spoken" class="vh" aria-live="polite" aria-atomic="true"></p>
+<p id="mistral-spoken" class="vh" aria-live="assertive" aria-atomic="true"></p>
+</div>
+
+<script src="app.js?v=b545cc4811be"></script>
 </body>
 </html>

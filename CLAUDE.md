@@ -5,19 +5,21 @@ Keep this project dependency-free and suitable for GitHub Pages and the WebBLE i
 - The root page is only a three-button launcher for Cyclone, Typhoon and Mistral.
 - Do not add a Main landmark or other visible content to the launcher.
 - Keep the small header Back button visible throughout all three apps; it always returns directly to the root launcher.
-- Preserve the independent workout engines in `cyclone/index.html`, `typhoon/index.html` and `mistral/index.html`.
+- Preserve the independent workout engines in `src/cyclone.html`, `src/typhoon.html` and `src/mistral.html`. Edit sources, then run `python build.py`; commit the generated root HTML/CSS/JS and legacy redirects.
 - Cyclone Connect establishes the bike connection and leaves the app ready; Start begins data capture and restarts the selected audio from the beginning, while Stop records the session, stops audio, and retains the live connection for another Start.
 - If Cyclone loses GATT during an active workout, keep the session and audio running, leave Stop available, and retry the same device automatically. Reconnection resumes bike data in the existing session and must never restart the selected audio.
-- On entry, Cyclone silently reconnects to a previously authorised nearby bike, including one just used by Typhoon, and changes its main button to Start only after FTMS notifications are active. Connect remains the fallback when silent reconnection is unavailable or fails.
-- Share only distance through the origin-wide `cyclone-typhoon-distances-v1` ledger.
+- The persistent shell owns the only native bike connection and FTMS subscription. Section switches and Back must not navigate the document or disconnect the bike. On app entry, silently reconnect a previously authorised bike when supported; Connect remains the fallback. All sections become ready only after FTMS notifications are active.
+- Share the Bluetooth connection through `src/shell.js` and share distance through the origin-wide `cyclone-typhoon-distances-v1` ledger.
 - Keep Typhoon performance/PB history in `typhoon-sessions-v1`.
 - Typhoon's seventeen-track library follows descending BPM order from 97 to 90.
 - Keep Typhoon tracks near -13 LUFS and free of leading or trailing silent runs of 80 milliseconds or more; preserve internal pauses and a small click-safe edge margin.
 - Preserve one-time migration from legacy `cyclone-sessions` and completed `typhoon-sessions-v1` records.
-- Both reset flows clear the combined distance ledger; Typhoon's reset additionally clears Typhoon workout history.
+- All reset flows clear the combined distance ledger; Typhoon's reset additionally clears Typhoon workout history.
 - In Typhoon, only `#music` may play or be unmuted. Keep `#music-preload` permanently paused and muted as a cache-only preloader; never swap the two elements.
 - Typhoon's large action button becomes Stop during a workout and is the sole early-exit control.
 - Register Typhoon's Media Session `nexttrack` action to invoke the same guarded music-advance function as the on-screen button, enabling AirPods and system media controls without introducing another audio player.
 - Typhoon's automatic plan excludes tracks heard in the preceding workout. Explicit Next song or Media Session skips use the remaining planned tracks without repetition, then every other unplayed library track before wrapping, so a user-requested skip may eventually override that exclusion.
 
 - Mistral preserves Cyclone workout, audio and reconnect behaviour, with a distance picker and automatic stopping at the selected target. Store Mistral distances in the shared ledger in kilometres with source `mistral`; convert display values to the selected unit. Keep cadence polite and distance milestones assertive.
+
+- Back must end active capture, cancel pending countdown/media start, pause all outgoing audio and refresh shared totals on entering another section. Clear outgoing Media Session controls and register Typhoon Next only while Typhoon is open. Keep legacy section URLs as redirects into root hash routes.
