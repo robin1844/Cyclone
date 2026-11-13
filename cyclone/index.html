@@ -291,7 +291,9 @@ function updateRpm(cadenceRpm) {
   }
 }
 
-function todayStr() { return new Date().toISOString().slice(0, 10); }
+function todayStr(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
 
 function parseStoredArray(key) {
   try {
@@ -353,7 +355,7 @@ function computeStats() {
     const km = Number(s.km) || 0;
     const time = Date.parse(s.endedAt);
     allKm += km;
-    if (Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === today) todayKm += km;
+    if (Number.isFinite(time) && todayStr(new Date(time)) === today) todayKm += km;
     if (Number.isFinite(time) && time >= weekStart) weekKm += km;
     if (Number.isFinite(time) && time >= monthStart) monthKm += km;
   }

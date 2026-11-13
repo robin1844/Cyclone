@@ -222,7 +222,6 @@
     <button id="unit-btn" type="button">Switch to KM</button>
   </div>
   <div id="workout-screen" hidden>
-  <p id="distance-progress"></p>
   <button id="main-btn">Connect</button>
 
   <div id="audio-controls">
@@ -231,6 +230,8 @@
     <button id="play-btn" type="button" hidden>Play</button>
     <audio id="workout-audio" preload="metadata"></audio>
   </div>
+
+  <p id="distance-progress"></p>
 
   <div id="rpm-display" hidden>
     <div id="rpm-label">Cadence (RPM)</div>
@@ -281,7 +282,9 @@ const spokenUnit = () => unit === "miles" ? "miles" : "kilometres";
 const distanceText = km => `${(km * 1000 / metresPerUnit()).toFixed(2)} ${unitLabel()}`;
 
 function renderProgress() {
-  $("distance-progress").textContent = `${(sessionDistanceM / metresPerUnit()).toFixed(2)} / ${targetDistance} ${unitLabel()}`;
+  const travelled = (sessionDistanceM / metresPerUnit()).toFixed(1).replace(/\.0$/, "");
+  const suffix = unit === "miles" ? " miles" : "K";
+  $("distance-progress").textContent = `Distance: ${travelled}${suffix} of ${targetDistance}${suffix}`;
 }
 function chooseDistance(value) {
   targetDistance = value;
@@ -300,7 +303,10 @@ function updateDistance() {
     return;
   }
   while (travelled >= nextMilestone) {
-    speak(`${nextMilestone} ${spokenUnit()} travelled.`);
+    const remaining = targetDistance - nextMilestone;
+    const down = unit === "miles" ? `${nextMilestone} miles` : `${nextMilestone}K`;
+    const toGo = unit === "miles" && remaining === 0.5 ? "half a mile" : `${remaining}`;
+    speak(`${down} down, ${toGo} to go.`);
     nextMilestone += 0.5;
   }
 }
@@ -355,7 +361,9 @@ function updateRpm(cadenceRpm) {
   }
 }
 
-function todayStr() { return new Date().toISOString().slice(0, 10); }
+function todayStr(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
 
 function parseStoredArray(key) {
   try {
@@ -417,7 +425,7 @@ function computeStats() {
     const km = Number(s.km) || 0;
     const time = Date.parse(s.endedAt);
     allKm += km;
-    if (Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === today) todayKm += km;
+    if (Number.isFinite(time) && todayStr(new Date(time)) === today) todayKm += km;
     if (Number.isFinite(time) && time >= weekStart) weekKm += km;
     if (Number.isFinite(time) && time >= monthStart) monthKm += km;
   }
