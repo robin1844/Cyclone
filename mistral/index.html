@@ -319,6 +319,8 @@ let lastT = null;
 let lastRawDistanceM = null;
 let latestSpeed_kmh = 0;
 let speakTimer = null;
+let speakUpdateTimer = null;
+let cadenceBlockedUntil = 0;
 let wakeLock = null;
 let audioUrl = null;
 let reconnectTimer = null;
@@ -338,14 +340,20 @@ document.addEventListener("visibilitychange", () => {
 
 function speak(text) {
   if (!text) return;
+  // Keep cadence quiet while VoiceOver receives and reads a priority message.
+  cadenceBlockedUntil = performance.now() + 8000;
+  clearTimeout(cadenceTimer);
+  $("cadence-spoken").textContent = "";
   const r = $("spoken");
+  clearTimeout(speakTimer);
+  clearTimeout(speakUpdateTimer);
   r.textContent = "";
-  requestAnimationFrame(() => {
+  // A separate task gives the accessibility tree time to register the empty
+  // region, including before the very first distance announcement.
+  speakUpdateTimer = setTimeout(() => {
     r.textContent = text;
-    // Clear after VoiceOver has had time to read it so it doesn't repeat on swipe
-    clearTimeout(speakTimer);
-    speakTimer = setTimeout(() => { r.textContent = ""; }, 6000);
-  });
+    speakTimer = setTimeout(() => { r.textContent = ""; }, 8000);
+  }, 100);
 }
 
 let lastBand = null;
@@ -354,10 +362,11 @@ function updateRpm(cadenceRpm) {
   $("rpm-value").textContent = band;
   if (band !== lastBand) {
     lastBand = band;
+    if (performance.now() < cadenceBlockedUntil) return;
     const region = $("cadence-spoken");
     region.textContent = "";
     clearTimeout(cadenceTimer);
-    cadenceTimer = setTimeout(() => { if (sessionActive) region.textContent = `${band}`; }, 150);
+    cadenceTimer = setTimeout(() => { if (sessionActive && performance.now() >= cadenceBlockedUntil) region.textContent = `${band}`; }, 150);
   }
 }
 
@@ -538,6 +547,7 @@ async function startSession() {
   }
   sessionDistanceM = 0;
   nextMilestone = 0.5;
+  cadenceBlockedUntil = 0;
   renderProgress();
   $("change-distance-btn").hidden = true;
   lastT = null;
