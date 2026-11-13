@@ -206,6 +206,7 @@
     <input id="audio-file" type="file" accept="audio/mpeg,.mp3" hidden />
     <button id="play-btn" type="button" hidden>Play</button>
     <audio id="workout-audio" preload="metadata"></audio>
+    <p id="audio-status" hidden></p>
   </div>
 
   <div id="rpm-display" hidden>
@@ -459,6 +460,8 @@ function endSession() {
 let audioContext = null;
 let startGeneration = 0;
 let startingAudio = false;
+let workoutMediaSource = null;
+let workoutMediaGain = null;
 const signalOscillators = new Set();
 function ensureAudioContext() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -508,30 +511,46 @@ async function startWorkoutAudio() {
   const generation = ++startGeneration;
   const audio = $("workout-audio");
   setStartingAudio(true);
+  $("audio-status").hidden = true;
   audio.pause();
   cancelSignals();
-  // Unlock the chosen media in the Start tap, silently, as Typhoon does on iPhone.
-  let unlocked = Promise.resolve();
+  // Start the media while the Start tap still grants playback permission.
+  // Silence its Web Audio output rather than muting and restarting the element.
+  let playbackFailed = false;
   if (audio.src) {
-    audio.muted = true;
+    if (ensureAudioContext() && !workoutMediaSource) {
+      workoutMediaSource = audioContext.createMediaElementSource(audio);
+      workoutMediaGain = audioContext.createGain();
+      workoutMediaSource.connect(workoutMediaGain);
+      workoutMediaGain.connect(audioContext.destination);
+    }
+    if (workoutMediaGain) workoutMediaGain.gain.setValueAtTime(0, audioContext.currentTime);
+    audio.muted = !workoutMediaGain;
     audio.currentTime = 0;
     try {
-      unlocked = Promise.resolve(audio.play()).catch(() => {}).then(() => {
-        if (generation !== startGeneration) return;
-        audio.pause();
-        audio.currentTime = 0;
-      });
-    } catch (error) {}
+      Promise.resolve(audio.play()).catch(() => { playbackFailed = true; });
+    } catch (error) { playbackFailed = true; }
   }
   for (const delay of [0, 0.9, 1.8]) beep(500, 0.32, delay);
   beep(1000, 0.65, 2.7);
-  await Promise.all([unlocked, new Promise(resolve => setTimeout(resolve, 4400))]);
+  await new Promise(resolve => setTimeout(resolve, 4400));
   if (generation !== startGeneration || !sessionActive) return;
+  if (audio.src) audio.currentTime = 0;
   audio.muted = false;
+  if (workoutMediaGain) workoutMediaGain.gain.setValueAtTime(1, audioContext.currentTime);
   setStartingAudio(false);
-  if (audio.src) {
-    audio.currentTime = 0;
-    try { await audio.play(); } catch (error) {}
+  // Usually already playing: do not require another delayed play permission.
+  if (audio.src && (audio.paused || playbackFailed)) {
+    try {
+      await audio.play();
+    } catch (error) {
+      if (generation === startGeneration && sessionActive) {
+        const message = "Workout audio could not start automatically. Tap Play to start it.";
+        $("audio-status").textContent = message;
+        $("audio-status").hidden = false;
+        speak(message);
+      }
+    }
   }
 }
 function stopWorkoutAudio() {
@@ -540,6 +559,7 @@ function stopWorkoutAudio() {
   audio.pause();
   if (audio.src) audio.currentTime = 0;
   audio.muted = false;
+  if (workoutMediaGain) workoutMediaGain.gain.setValueAtTime(1, audioContext.currentTime);
   setStartingAudio(false);
   cancelSignals();
   finishSignal();
@@ -729,6 +749,7 @@ function updatePlaybackButton() {
   const playBtn = $("play-btn");
   const file = $("audio-file").files && $("audio-file").files[0];
   const action = audio.paused ? "Play" : "Pause";
+  if (!audio.paused) $("audio-status").hidden = true;
   playBtn.textContent = action;
   playBtn.setAttribute("aria-label", file ? `${action} ${workoutName(file)}` : action);
 }
