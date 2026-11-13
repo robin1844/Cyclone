@@ -27,13 +27,13 @@
   body { background: var(--bg); }
   #launcher {
     display: grid;
-    grid-template-rows: 1fr 1fr;
+    grid-template-rows: repeat(3, 1fr);
     width: 100%;
     min-height: 100%;
   }
   button {
     width: 100%;
-    min-height: 50vh;
+    min-height: calc(100vh / 3);
     border: 0;
     border-radius: 0;
     background: var(--accent);
@@ -41,6 +41,7 @@
     font: 900 clamp(2.5rem, 12vw, 6rem)/1 system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
     cursor: pointer;
   }
+  button:nth-child(2) { background: #0f766e; color: #ffffff; }
   button:last-child { background: var(--second); color: var(--fg); }
   button:focus-visible { outline: .35rem solid #f0b429; outline-offset: -.35rem; }
 </style>
@@ -49,6 +50,7 @@
 <div id="launcher">
   <button type="button" onclick="location.href='cyclone/'">Cyclone</button>
   <button type="button" onclick="location.href='typhoon/'">Typhoon</button>
+  <button type="button" onclick="location.href='mistral/'">Mistral</button>
 </div>
 </body>
 </html>
