@@ -12,3 +12,5 @@ The launcher has no landmark regions. All app headers contain a small persistent
 The workout engines and their app-specific histories remain independent. All three apps share distance through the origin-wide `cyclone-typhoon-distances-v1` local-storage ledger. On first use, existing `cyclone-sessions` and completed `typhoon-sessions-v1` records are imported into that ledger once.
 
 The **Reset all distance data** action in Cyclone or Mistral and **Reset all data** action in Typhoon clear the shared distance ledger. Typhoon's reset also retains its existing responsibility for clearing Typhoon's performance history.
+
+Cyclone and Mistral use Typhoon's three countdown beeps and Go tone, followed by the same one-second gap before chosen workout media starts. Stop pauses media before the two-tone finish signal; Mistral also uses that signal at its distance target. Stopping during the opening tones cancels the remaining start sequence.

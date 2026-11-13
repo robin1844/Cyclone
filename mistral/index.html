@@ -539,6 +539,95 @@ function endSession() {
     : `Workout stopped. ${(sessionDistanceM / metresPerUnit()).toFixed(2)} ${spokenUnit()} travelled.`);
 }
 
+let audioContext = null;
+let startGeneration = 0;
+let startingAudio = false;
+const signalOscillators = new Set();
+function ensureAudioContext() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return false;
+  if (!audioContext) audioContext = new AudioContextClass();
+  if (audioContext.state === "suspended") audioContext.resume().catch(() => {});
+  return true;
+}
+function cancelSignals() {
+  for (const oscillator of signalOscillators) {
+    try { oscillator.stop(); } catch (error) {}
+  }
+  signalOscillators.clear();
+}
+function setStartingAudio(value) {
+  startingAudio = value;
+  $("choose-audio-btn").disabled = value;
+  $("play-btn").disabled = value;
+}
+function beep(frequency, durationSeconds, delaySeconds = 0) {
+  if (!ensureAudioContext()) return;
+  const oscillator = audioContext.createOscillator();
+  const master = audioContext.createGain();
+  const start = audioContext.currentTime + delaySeconds;
+  const end = start + durationSeconds;
+  oscillator.frequency.value = frequency;
+  oscillator.type = "sine";
+  master.gain.setValueAtTime(0.0001, start);
+  master.gain.exponentialRampToValueAtTime(0.68, start + 0.03);
+  master.gain.setValueAtTime(0.68, Math.max(start + 0.04, end - 0.08));
+  master.gain.exponentialRampToValueAtTime(0.0001, end);
+  oscillator.connect(master);
+  master.connect(audioContext.destination);
+  signalOscillators.add(oscillator);
+  oscillator.onended = () => signalOscillators.delete(oscillator);
+  oscillator.start(start);
+  oscillator.stop(end + 0.02);
+}
+
+function finishSignal() {
+  beep(330, 0.3);
+  beep(660, 0.65, 0.36);
+}
+
+
+async function startWorkoutAudio() {
+  const generation = ++startGeneration;
+  const audio = $("workout-audio");
+  setStartingAudio(true);
+  audio.pause();
+  cancelSignals();
+  // Unlock the chosen media in the Start tap, silently, as Typhoon does on iPhone.
+  let unlocked = Promise.resolve();
+  if (audio.src) {
+    audio.muted = true;
+    audio.currentTime = 0;
+    try {
+      unlocked = Promise.resolve(audio.play()).catch(() => {}).then(() => {
+        if (generation !== startGeneration) return;
+        audio.pause();
+        audio.currentTime = 0;
+      });
+    } catch (error) {}
+  }
+  for (const delay of [0, 0.9, 1.8]) beep(500, 0.32, delay);
+  beep(1000, 0.65, 2.7);
+  await Promise.all([unlocked, new Promise(resolve => setTimeout(resolve, 4400))]);
+  if (generation !== startGeneration || !sessionActive) return;
+  audio.muted = false;
+  setStartingAudio(false);
+  if (audio.src) {
+    audio.currentTime = 0;
+    try { await audio.play(); } catch (error) {}
+  }
+}
+function stopWorkoutAudio() {
+  ++startGeneration;
+  const audio = $("workout-audio");
+  audio.pause();
+  if (audio.src) audio.currentTime = 0;
+  audio.muted = false;
+  setStartingAudio(false);
+  cancelSignals();
+  finishSignal();
+}
+
 async function startSession() {
   if (targetDistance === null) return;
   if (!connected || !device || !device.gatt || !device.gatt.connected) {
@@ -554,11 +643,7 @@ async function startSession() {
   lastRawDistanceM = null;
   latestSpeed_kmh = 0;
   setSessionUI();
-  const audio = $("workout-audio");
-  if (audio.src) {
-    audio.currentTime = 0;
-    try { await audio.play(); } catch (e) {}
-  }
+  await startWorkoutAudio();
 }
 
 async function finishConnection(chosenDevice) {
@@ -652,9 +737,7 @@ function stop() {
   clearTimeout(cadenceTimer);
   $("cadence-spoken").textContent = "";
   $("change-distance-btn").hidden = false;
-  const audio = $("workout-audio");
-  audio.pause();
-  if (audio.src) audio.currentTime = 0;
+  stopWorkoutAudio();
   endSession();
   if (device && device.gatt && device.gatt.connected) setReadyUI();
   else setDisconnectedUI();
@@ -674,6 +757,9 @@ function onUnexpectedDisconnect() {
 }
 
 function leaveCyclone() {
+  ++startGeneration;
+  $("workout-audio").pause();
+  cancelSignals();
   cancelReconnect();
   if (sessionActive) endSession();
   if (device) device.removeEventListener("gattserverdisconnected", onUnexpectedDisconnect);
@@ -693,6 +779,7 @@ function resetData() {
 }
 
 function chooseWorkout() {
+  if (startingAudio) return;
   $("audio-file").click();
 }
 
@@ -718,6 +805,7 @@ function workoutName(file) {
 }
 
 async function togglePlayback() {
+  if (startingAudio) return;
   const audio = $("workout-audio");
   const playBtn = $("play-btn");
   if (audio.paused) {
