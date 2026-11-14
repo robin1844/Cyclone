@@ -1579,6 +1579,9 @@ const $ = id => document.getElementById(id);
 let unit = "miles";
 let targetDistance = null;
 let nextMilestone = 0.5;
+let announcedFinishDistances = new Set();
+let sessionStartedAt = null;
+let resultAnnouncementTimer = null;
 let cadenceTimer = null;
 const metresPerUnit = () => unit === "miles" ? 1609.344 : 1000;
 const unitLabel = () => unit === "miles" ? "miles" : "km";
@@ -1591,6 +1594,8 @@ function renderProgress() {
   $("distance-progress").textContent = `Distance: ${travelled}${suffix} of ${targetDistance}${suffix}`;
 }
 function chooseDistance(value) {
+  clearTimeout(resultAnnouncementTimer);
+  $("results-section").hidden = true;
   targetDistance = value;
   sessionDistanceM = 0;
   $("distance-setup").hidden = true;
@@ -1606,13 +1611,25 @@ function updateDistance() {
     stop();
     return;
   }
+  let announcement = null;
   while (travelled >= nextMilestone) {
     const remaining = targetDistance - nextMilestone;
     const down = unit === "miles" ? `${nextMilestone} miles` : `${nextMilestone}K`;
     const toGo = unit === "miles" && remaining === 0.5 ? "half a mile" : `${remaining}`;
-    speak(`${down} down, ${toGo} to go.`);
+    announcement = `${down} down, ${toGo} to go.`;
     nextMilestone += 0.5;
   }
+  const remainingMetres = targetDistance * metresPerUnit() - sessionDistanceM;
+  for (const distance of [200, 100, 50]) {
+    const thresholdMetres = unit === "miles" ? distance * 0.9144 : distance;
+    if (remainingMetres <= thresholdMetres + 1e-6 && !announcedFinishDistances.has(distance)) {
+      announcedFinishDistances.add(distance);
+      announcement = `${distance} ${unit === "miles" ? "yards" : "metres"} to go.`;
+    }
+  }
+  // If a packet crosses more than one threshold, announce the closest current
+  // marker once, rather than interrupting it with outdated messages.
+  if (announcement) speak(announcement);
 }
 
 let device = null, char = null;
@@ -1831,14 +1848,40 @@ function setInterruptedUI() {
   $("rpm-display").hidden = false;
 }
 
+function timeText(seconds) {
+  const total = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor(total / 60) % 60;
+  const remainder = String(total % 60).padStart(2, "0");
+  return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${remainder}` : `${minutes}:${remainder}`;
+}
+function spokenTime(seconds) {
+  const total = Math.max(0, Math.round(seconds));
+  const values = [
+    [Math.floor(total / 3600), "hour"],
+    [Math.floor(total / 60) % 60, "minute"],
+    [total % 60, "second"]
+  ];
+  return values.filter(([value]) => value > 0).map(([value, label]) => `${value} ${label}${value === 1 ? "" : "s"}`).join(", ") || "0 seconds";
+}
 function endSession() {
   const km = sessionDistanceM / 1000;
+  const elapsedSeconds = sessionStartedAt === null ? 0 : Math.max(0, (performance.now() - sessionStartedAt) / 1000);
+  const averageSpeed = elapsedSeconds > 0 ? sessionDistanceM / metresPerUnit() / (elapsedSeconds / 3600) : 0;
   recordSession(km);
   renderStats();
+  $("result-time").textContent = timeText(elapsedSeconds);
+  $("result-speed").textContent = `${averageSpeed.toFixed(1)} ${unit === "miles" ? "mph" : "km/h"}`;
+  $("results-section").hidden = false;
+  $("results-heading").focus();
   const completed = sessionDistanceM >= targetDistance * metresPerUnit();
-  speak(completed
-    ? `${targetDistance} ${spokenUnit()} travelled. Workout complete.`
-    : `Workout stopped. ${(sessionDistanceM / metresPerUnit()).toFixed(2)} ${spokenUnit()} travelled.`);
+  const intro = completed ? "Workout complete." : "Workout stopped.";
+  const speedUnit = unit === "miles" ? "miles per hour" : "kilometres per hour";
+  // Let the finish tones end before reading the two simple workout results.
+  clearTimeout(resultAnnouncementTimer);
+  resultAnnouncementTimer = setTimeout(() => {
+    speak(`${intro} Time: ${spokenTime(elapsedSeconds)}. Average speed: ${averageSpeed.toFixed(1)} ${speedUnit}.`);
+  }, 1100);
 }
 
 let audioContext = null;
@@ -1955,8 +1998,12 @@ async function startSession() {
     setDisconnectedUI();
     return;
   }
+  clearTimeout(resultAnnouncementTimer);
+  $("results-section").hidden = true;
+  sessionStartedAt = performance.now();
   sessionDistanceM = 0;
   nextMilestone = 0.5;
+  announcedFinishDistances = new Set();
   cadenceBlockedUntil = 0;
   renderProgress();
   $("change-distance-btn").hidden = true;
@@ -2110,6 +2157,8 @@ sections["mistral"] = {
   },
   leave() {
     if (sessionActive) stop();
+    clearTimeout(resultAnnouncementTimer);
+    $("results-section").hidden = true;
     ++startGeneration;
     $("workout-audio").pause();
     cancelSignals();

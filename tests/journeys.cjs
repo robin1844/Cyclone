@@ -278,4 +278,5 @@ async function main() {
     await audioContext.close();
   } finally { await browser.close(); }
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });
+module.exports = { installBike };
+if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1; });

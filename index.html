@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light dark" />
 <title>Cyclone</title>
-<link rel="stylesheet" href="app.css?v=b545cc4811be" />
+<link rel="stylesheet" href="app.css?v=9dc22058eddd" />
 </head>
 <body>
 <div id="launcher">
@@ -170,6 +170,12 @@
     <div id="mistral-rpm-value">0</div>
   </div>
 
+  <section id="mistral-results-section" aria-labelledby="mistral-results-heading" hidden>
+    <h2 id="mistral-results-heading" tabindex="-1">Workout results</h2>
+    <div class="stat-row"><span class="stat-label">Time</span><span class="stat-value" id="mistral-result-time"></span></div>
+    <div class="stat-row"><span class="stat-label">Average speed</span><span class="stat-value" id="mistral-result-speed"></span></div>
+  </section>
+
   <div id="mistral-stats">
     <div class="stat-row">
       <span class="stat-label">Today</span>
@@ -198,6 +204,6 @@
 <p id="mistral-spoken" class="vh" aria-live="assertive" aria-atomic="true"></p>
 </div>
 
-<script src="app.js?v=b545cc4811be"></script>
+<script src="app.js?v=9dc22058eddd"></script>
 </body>
 </html>
