@@ -4,12 +4,18 @@ const sections = {};
 let activeSection = null;
 const Bike = (() => {
   let device = null, characteristic = null, pending = null, retryTimer = null;
+  let lastNotificationAt = 0;
   const FTMS = 0x1826, IBD = 0x2ad2;
   const isConnected = () => Boolean(device?.gatt?.connected && characteristic);
   function notify() {
     for (const section of Object.values(sections)) section.connection(device);
   }
   function onData(event) {
+    if (activeSection) { sections[activeSection].cancelStaleStart?.(); WorkoutData.expire(sections[activeSection]); }
+    let measurement;
+    try { measurement = BikeData.parse(event.target.value); } catch (error) { return; }
+    lastNotificationAt = Date.now();
+    WorkoutData.feed(measurement);
     if (activeSection) sections[activeSection].data(event);
   }
   function retry() {
@@ -19,6 +25,7 @@ const Bike = (() => {
     }, 3000);
   }
   function onDisconnected() {
+    WorkoutData.disconnected();
     if (characteristic) characteristic.removeEventListener("characteristicvaluechanged", onData);
     characteristic = null;
     for (const section of Object.values(sections)) section.disconnected();
@@ -28,6 +35,7 @@ const Bike = (() => {
     if (isConnected()) return device;
     if (pending) return pending;
     clearTimeout(retryTimer);
+    for (const section of Object.values(sections)) section.connecting();
     pending = (async () => {
       if (device && device !== chosen) device.removeEventListener("gattserverdisconnected", onDisconnected);
       device = chosen;
@@ -77,7 +85,15 @@ const Bike = (() => {
       if (chosen) await ensure(chosen);
     } catch (error) { if (device) retry(); }
   }
-  return { connect, ensure, autoConnect, isConnected, get device() { return device; } };
+  function resume() {
+    if (activeSection) { sections[activeSection].cancelStaleStart?.(); WorkoutData.expire(sections[activeSection]); }
+    if (device && (!isConnected() || (lastNotificationAt && Date.now() - lastNotificationAt > 30000))) {
+      if (characteristic) characteristic.removeEventListener("characteristicvaluechanged", onData);
+      characteristic = null;
+      ensure(device).catch(retry);
+    }
+  }
+  return { connect, ensure, autoConnect, resume, isConnected, get device() { return device; } };
 })();
 
 // Engines keep their own DOM, metrics, histories and audio without duplicate IDs.
@@ -99,6 +115,8 @@ function showSection(name, updateHistory = true) {
   navigation = navigation.then(async () => {
     if (!Object.hasOwn(sections, name)) name = null;
     if (name === activeSection) return;
+    MoreData.close();
+    if (activeSection) { sections[activeSection].cancelStaleStart?.(); WorkoutData.expire(sections[activeSection]); }
     const previous = activeSection;
     if (previous) await sections[previous].leave();
     activeSection = name;
@@ -118,3 +136,6 @@ function showSection(name, updateHistory = true) {
   });
   return navigation;
 }
+
+window.addEventListener("pageshow", () => Bike.resume());
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") Bike.resume(); });

@@ -234,6 +234,7 @@
   </div>
 
   <button id="reset-btn">Reset all distance data</button>
+  <button id="more-data-btn" class="more-data-button" type="button">More data</button>
 </div>
 
 <p id="spoken" class="vh" aria-live="assertive" aria-atomic="true"></p>
@@ -333,9 +334,9 @@ function saveDistanceLedger(ledger) {
 }
 
 function recordDistance(km) {
-  if (!(km > 0)) return;
+  if (!(km >= 0)) return;
   const ledger = loadDistanceLedger();
-  ledger.push({ id: `cyclone-${Date.now()}-${Math.random().toString(16).slice(2)}`, source: "cyclone", endedAt: new Date().toISOString(), km: Number(km.toFixed(3)) });
+  ledger.push(WorkoutData.attach({ id: `cyclone-${Date.now()}-${Math.random().toString(16).slice(2)}`, source: "cyclone", endedAt: new Date().toISOString(), km: Number(km.toFixed(3)) }));
   saveDistanceLedger(ledger);
 }
 
@@ -369,24 +370,7 @@ function renderStats() {
   $("stat-alltime").textContent = `${allKm.toFixed(2)} km`;
 }
 
-function parseBike(dv) {
-  const flags = dv.getUint16(0, true); let o = 2; const out = {};
-  const u16 = () => { const v = dv.getUint16(o, true); o += 2; return v; };
-  const s16 = () => { const v = dv.getInt16(o, true); o += 2; return v; };
-  const u24 = () => { const a = dv.getUint8(o), b = dv.getUint8(o+1), c = dv.getUint8(o+2); o += 3; return a|(b<<8)|(c<<16); };
-  const u8  = () => { const v = dv.getUint8(o); o += 1; return v; };
-  if (!(flags & 1))  out.speed_kmh   = u16() / 100;
-  if (flags & 2)     u16();
-  if (flags & 4)     out.cadence_rpm = u16() / 2;
-  if (flags & 8)     u16();
-  if (flags & 16)    out.distance_m  = u24();
-  if (flags & 32)    s16();
-  if (flags & 64)    out.power_w     = s16();
-  if (flags & 128)   s16();
-  if (flags & 256)   u16();
-  if (flags & 512)   u8();
-  return out;
-}
+function parseBike(view) { return BikeData.parse(view); }
 
 function onData(e) {
   const m = parseBike(e.target.value);
@@ -395,8 +379,8 @@ function onData(e) {
   if (sessionActive && "cadence_rpm" in m) updateRpm(m.cadence_rpm);
   if ("distance_m" in m) {
     if (sessionActive && lastRawDistanceM !== null) {
-      const delta = m.distance_m - lastRawDistanceM;
-      if (delta >= 0) sessionDistanceM += delta;
+      const dt = lastT === null ? 0 : now - lastT;
+      sessionDistanceM += BikeData.distanceDelta(lastRawDistanceM, m.distance_m, dt, latestSpeed_kmh);
     }
     lastRawDistanceM = m.distance_m;
   } else if (sessionActive) {
@@ -404,6 +388,7 @@ function onData(e) {
     if (dt > 0 && dt < 5) sessionDistanceM += (latestSpeed_kmh * 1000 / 3600) * dt;
   }
   lastT = now;
+  if (sessionActive) WorkoutData.distance(sessionDistanceM);
 }
 
 function setSessionUI() {
@@ -465,7 +450,7 @@ function ensureAudioContext() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) return false;
   if (!audioContext) audioContext = new AudioContextClass();
-  if (audioContext.state === "suspended") audioContext.resume().catch(() => {});
+  if (audioContext.state === "suspended" || audioContext.state === "interrupted") audioContext.resume().catch(() => {});
   return true;
 }
 function cancelSignals() {
@@ -512,6 +497,9 @@ async function startWorkoutAudio() {
   $("audio-status").hidden = true;
   audio.pause();
   cancelSignals();
+  ensureAudioContext();
+  const audioReady = audioContext && audioContext.state !== "running"
+    ? audioContext.resume().then(() => true, () => false) : Promise.resolve(true);
   // Start the media while the Start tap still grants playback permission.
   // Silence its Web Audio output rather than muting and restarting the element.
   let playbackFailed = false;
@@ -529,9 +517,23 @@ async function startWorkoutAudio() {
       Promise.resolve(audio.play()).catch(() => { playbackFailed = true; });
     } catch (error) { playbackFailed = true; }
   }
+  const ready = await Promise.race([audioReady, new Promise(resolve => setTimeout(() => resolve(false), 3000))]);
+  if (generation !== startGeneration || !sessionActive) return;
+  if (!ready) {
+    audio.pause();
+    audio.muted = false;
+    if (workoutMediaGain) workoutMediaGain.gain.setValueAtTime(1, audioContext.currentTime);
+    setStartingAudio(false);
+    const message = audio.src ? "Your phone has paused workout audio. Tap Play to resume it." : "Your workout is running, but your phone could not play the opening tones.";
+    $("audio-status").textContent = message;
+    $("audio-status").hidden = false;
+    speak(message);
+    return;
+  }
   for (const delay of [0, 0.9, 1.8]) beep(500, 0.32, delay);
   beep(1000, 0.65, 2.7);
   await new Promise(resolve => setTimeout(resolve, 4400));
+  WorkoutData.expire(sections.cyclone);
   if (generation !== startGeneration || !sessionActive) return;
   if (audio.src) audio.currentTime = 0;
   audio.muted = false;
@@ -564,7 +566,7 @@ function stopWorkoutAudio() {
 }
 
 async function startSession() {
-  if (!connected || !device || !device.gatt || !device.gatt.connected) {
+  if (!Bike.isConnected() || !connected || !device || !device.gatt || !device.gatt.connected) {
     setDisconnectedUI();
     return;
   }
@@ -572,6 +574,7 @@ async function startSession() {
   lastT = null;
   lastRawDistanceM = null;
   latestSpeed_kmh = 0;
+  WorkoutData.start("cyclone");
   setSessionUI();
   await startWorkoutAudio();
 }
@@ -644,6 +647,7 @@ function workoutName(file) {
 
 async function togglePlayback() {
   if (startingAudio) return;
+  ensureAudioContext();
   const audio = $("workout-audio");
   const playBtn = $("play-btn");
   if (audio.paused) {
@@ -664,11 +668,13 @@ function updatePlaybackButton() {
 }
 
 $("main-btn").addEventListener("click", () => {
+  WorkoutData.expire(sections.cyclone);
   if (sessionActive) stop();
   else if (connected) startSession();
   else connect();
 });
 $("home-btn").addEventListener("click", leaveCyclone);
+$("more-data-btn").addEventListener("click", () => MoreData.open("km", $("more-data-btn")));
 $("reset-btn").addEventListener("click", resetData);
 $("choose-audio-btn").addEventListener("click", chooseWorkout);
 $("audio-file").addEventListener("change", loadWorkout);
@@ -681,12 +687,28 @@ renderStats();
 
 sections["cyclone"] = {
   data: onData,
+  expire() {
+    if (sessionActive) {
+
+      stop();
+    }
+    ++startGeneration;
+    cancelSignals();
+    clearTimeout(speakTimer);
+
+    $("spoken").textContent = "";
+  },
+
   connection(chosen) {
     device = chosen;
     connected = true;
     lastT = null;
     lastRawDistanceM = null;
     if (sessionActive) setSessionUI(); else setReadyUI();
+  },
+  connecting() {
+    if (sessionActive) setInterruptedUI();
+    else { setDisconnectedUI(); $("main-btn").disabled = true; }
   },
   disconnected: onUnexpectedDisconnect,
   enter() {

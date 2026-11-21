@@ -48,7 +48,10 @@ def build():
     markup = re.search(r'<div id="launcher">.*?</div>', launcher, re.S)[0]
     for name in ("cyclone", "typhoon", "mistral"):
         markup = markup.replace(f'onclick="location.href=\'{name}/\'"', f'id="open-{name}" data-section="{name}"')
-    scripts = [(SRC / "shell.js").read_text(encoding="utf-8")]
+    more = (SRC / "more-data.html").read_text(encoding="utf-8")
+    css += "\n" + re.search(r"<style>(.*?)</style>", more, re.S)[1]
+    markup += re.sub(r"<style>.*?</style>", "", more, flags=re.S)
+    scripts = [(SRC / name).read_text(encoding="utf-8") for name in ("workout-data.js", "shell.js", "more-data.js")]
     for name in ("cyclone", "typhoon", "mistral"):
         source = (SRC / f"{name}.html").read_text(encoding="utf-8")
         css += "\n" + scope_css(re.search(r"<style>(.*?)</style>", source, re.S)[1], name)

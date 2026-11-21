@@ -217,6 +217,8 @@
     <div class="stat-row"><span class="stat-label">All time</span><span class="stat-value" id="distance-all">0.00 kilometres</span></div>
   </section>
 
+  <button id="more-data-btn" class="more-data-button" type="button">More data</button>
+
   <div id="post-workout-actions" hidden>
     <button id="another-workout" type="button">Another workout</button>
     <button id="reset-history" type="button">Reset all data</button>
@@ -291,6 +293,7 @@ let latest = { speedKph: 0, cadenceRpm: 0, powerW: 0, heartRate: 0 };
 
 let workoutActive = false;
 let startingWorkout = false;
+let startupRequestedAt = 0;
 let workoutGeneration = 0;
 const signalOscillators = new Set();
 function cancelSignals() {
@@ -382,11 +385,11 @@ function saveDistanceLedger(ledger) { safeSet(DISTANCE_KEY, JSON.stringify(ledge
 
 function recordCombinedDistance(result) {
   const km = Number(result.distanceKm);
-  if (!(km > 0)) return;
+  if (!(km >= 0)) return;
   const id = `typhoon-${result.id}`;
   const ledger = loadDistanceLedger();
   if (ledger.some(entry => entry.id === id)) return;
-  ledger.push({ id, source: "typhoon", endedAt: result.endedAt, km });
+  ledger.push(WorkoutData.attach({ id, source: "typhoon", endedAt: result.endedAt, km }));
   saveDistanceLedger(ledger);
 }
 
@@ -521,12 +524,12 @@ function ensureAudioContext() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) return false;
   if (!audioContext) audioContext = new AudioContextClass();
-  if (audioContext.state === "suspended") audioContext.resume().catch(() => {});
+  if (audioContext.state === "suspended" || audioContext.state === "interrupted") audioContext.resume().catch(() => {});
   return true;
 }
 
 function warmAudioOutput() {
-  if (!ensureAudioContext()) return;
+  if (!ensureAudioContext() || audioContext.state !== "running") return;
   const oscillator = audioContext.createOscillator();
   const gain = audioContext.createGain();
   const now = audioContext.currentTime;
@@ -539,7 +542,7 @@ function warmAudioOutput() {
 }
 
 function beep(frequency, durationSeconds, delaySeconds = 0) {
-  if (!ensureAudioContext()) return;
+  if (!ensureAudioContext() || audioContext.state !== "running") return;
   const oscillator = audioContext.createOscillator();
   const master = audioContext.createGain();
   const start = audioContext.currentTime + delaySeconds;
@@ -573,6 +576,7 @@ async function runCountdown(generation) {
     $("countdown").textContent = String(number);
     beep(500, 0.32);
     await wait(900);
+    sections.typhoon.cancelStaleStart();
     if (generation !== workoutGeneration) return;
   }
   $("countdown").textContent = "Go";
@@ -696,20 +700,26 @@ function configureMediaControls() {
 }
 
 async function startWorkout() {
-  if (!connected || workoutActive || startingWorkout) return;
+  if (!Bike.isConnected() || !connected || workoutActive || startingWorkout) return;
   const generation = ++workoutGeneration;
   startingWorkout = true;
+  startupRequestedAt = Date.now();
   currentWorkoutWeightKg = loadWeightKg();
   selectedDurationSeconds = selectedMinutes() * 60;
   playbackPlan = createPlaybackPlan(selectedDurationSeconds);
   playbackIndex = 0;
   heardTrackIds = [];
   ensureAudioContext();
+  const audioReady = audioContext && audioContext.state !== "running"
+    ? audioContext.resume().then(() => true, () => false) : Promise.resolve(true);
   await unlockMusic(playbackPlan[0], generation);
   if (generation !== workoutGeneration) return;
   setSetupEnabled(false);
   await acquireWakeLock();
   if (generation !== workoutGeneration) { await releaseWakeLock(); return; }
+  await Promise.race([audioReady, new Promise(resolve => setTimeout(resolve, 3000))]);
+  sections.typhoon.cancelStaleStart();
+  if (generation !== workoutGeneration) return;
   await runCountdown(generation);
   if (generation !== workoutGeneration) return;
   startingWorkout = false;
@@ -724,6 +734,7 @@ async function startWorkout() {
   announcedTimeMilestones = new Set();
   workoutStartPerformance = performance.now();
   workoutActive = true;
+  WorkoutData.start("typhoon", currentWorkoutWeightKg);
   updateMainAction();
   $("main-action").disabled = false;
   $("countdown-section").hidden = true;
@@ -898,8 +909,8 @@ async function finishWorkout(completed, statusText) {
   if (completed) {
     sessions.push(result);
     saveSessions(sessions);
-    recordCombinedDistance(result);
   }
+  recordCombinedDistance(result);
   if (completed) { finishSignal(); await wait(1100); }
   await releaseWakeLock();
   if (generation !== workoutGeneration) return;
@@ -932,30 +943,7 @@ function updateCadenceSpeech(cadenceRpm) {
   }
 }
 
-function parseBike(dataView) {
-  const flags = dataView.getUint16(0, true);
-  let offset = 2;
-  const output = {};
-  const u8 = () => { const value = dataView.getUint8(offset); offset += 1; return value; };
-  const u16 = () => { const value = dataView.getUint16(offset, true); offset += 2; return value; };
-  const s16 = () => { const value = dataView.getInt16(offset, true); offset += 2; return value; };
-  const u24 = () => { const value = dataView.getUint8(offset) | (dataView.getUint8(offset + 1) << 8) | (dataView.getUint8(offset + 2) << 16); offset += 3; return value; };
-  if (!(flags & 1)) output.speedKph = u16() / 100;
-  if (flags & 2) u16();
-  if (flags & 4) output.cadenceRpm = u16() / 2;
-  if (flags & 8) u16();
-  if (flags & 16) output.distanceM = u24();
-  if (flags & 32) s16();
-  if (flags & 64) output.powerW = s16();
-  if (flags & 128) s16();
-  if (flags & 256) {
-    output.energyKcal = u16();
-    u16();
-    u8();
-  }
-  if (flags & 512) output.heartRate = u8();
-  return output;
-}
+function parseBike(view) { return BikeData.parse(view); }
 
 function onBikeData(event) {
   let measurement;
@@ -975,9 +963,7 @@ function onBikeData(event) {
 
   if ("distanceM" in measurement) {
     if (workoutActive && lastRawDistanceM !== null) {
-      let delta = measurement.distanceM - lastRawDistanceM;
-      if (delta < 0) delta = measurement.distanceM;
-      if (delta >= 0 && delta < 100) workoutMetrics.distanceM += delta;
+      workoutMetrics.distanceM += BikeData.distanceDelta(lastRawDistanceM, measurement.distanceM, dataDelta, latest.speedKph);
     }
     lastRawDistanceM = measurement.distanceM;
   } else if (workoutActive && dataDelta > 0 && dataDelta < 3) {
@@ -997,6 +983,7 @@ function onBikeData(event) {
     workoutMetrics.topPowerW = Math.max(workoutMetrics.topPowerW, latest.powerW);
     workoutMetrics.topCadenceRpm = Math.max(workoutMetrics.topCadenceRpm, latest.cadenceRpm);
     workoutMetrics.topSpeedKph = Math.max(workoutMetrics.topSpeedKph, latest.speedKph);
+    WorkoutData.distance(workoutMetrics.distanceM);
     updateLiveDisplay();
   }
 }
@@ -1140,8 +1127,11 @@ function saveWeight(event) {
 
 function init() {
   $("home-btn").addEventListener("click", () => { showSection(null); });
+  $("more-data-btn").addEventListener("click", () => MoreData.open("km", $("more-data-btn")));
   for (const button of document.querySelectorAll(".duration-choice")) button.addEventListener("click", chooseDuration);
   $("main-action").addEventListener("click", () => {
+    sections.typhoon.cancelStaleStart();
+    WorkoutData.expire(sections.typhoon);
     if (workoutActive) finishWorkout(false, "Workout ended early. The incomplete result was not saved.");
     else if (connected) startWorkout();
     else connect();
@@ -1169,6 +1159,21 @@ init();
 
 sections.typhoon = {
   data: onBikeData,
+  cancelStaleStart() {
+    if (!startingWorkout || Date.now() - startupRequestedAt < 60000) return;
+    ++workoutGeneration;
+    startingWorkout = false;
+    cancelSignals();
+    $("music").pause(); $("music-preload").pause();
+    $("countdown-section").hidden = true;
+    $("setup-section").hidden = false;
+    setSetupEnabled(true); updateMainAction();
+  },
+  expire() {
+    ++workoutGeneration; startingWorkout = false;
+    if (workoutActive) finishWorkout(false, "Previous workout ended.");
+    cancelSignals(); clearTimeout(spokenTimer); $("spoken").textContent = "";
+  },
   connection(chosen) {
     device = chosen;
     connected = true;
@@ -1177,6 +1182,11 @@ sections.typhoon = {
     lastCadenceBand = null;
     if (!startingWorkout && !workoutActive) setSetupEnabled(true);
     updateMainAction();
+  },
+  connecting() {
+    connected = false;
+    updateMainAction();
+    if (!workoutActive) $("main-action").disabled = true;
   },
   disconnected: onDisconnected,
   enter() {

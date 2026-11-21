@@ -1,15 +1,188 @@
+// FTMS packet decoding shared by all engines and the detailed ride summaries.
+const BikeData = {
+  parse(view) {
+    const flags = view.getUint16(0, true);
+    let offset = 2;
+    const u8 = () => view.getUint8(offset++);
+    const u16 = () => { const value = view.getUint16(offset, true); offset += 2; return value; };
+    const s16 = () => { const value = view.getInt16(offset, true); offset += 2; return value; };
+    const u24 = () => u8() | (u8() << 8) | (u8() << 16);
+    const out = {};
+    if (!(flags & 1)) out.speedKph = u16() / 100;
+    if (flags & 2) out.bikeAverageSpeedKph = u16() / 100;
+    if (flags & 4) out.cadenceRpm = u16() / 2;
+    if (flags & 8) out.bikeAverageCadenceRpm = u16() / 2;
+    if (flags & 16) out.distanceM = u24();
+    if (flags & 32) {
+      // Current SIG layout uses one byte. Many deployed FTMS bikes use the
+      // older two-byte, tenth-level representation; distinguish by packet size.
+      const trailing = ((flags & 64) ? 2 : 0) + ((flags & 128) ? 2 : 0) +
+        ((flags & 256) ? 5 : 0) + ((flags & 512) ? 1 : 0) +
+        ((flags & 1024) ? 1 : 0) + ((flags & 2048) ? 2 : 0) + ((flags & 4096) ? 2 : 0);
+      out.resistance = view.byteLength - offset - trailing === 1 ? u8() : s16() / 10;
+    }
+    if (flags & 64) out.powerW = s16();
+    if (flags & 128) out.bikeAveragePowerW = s16();
+    if (flags & 256) {
+      const energy = u16(), hour = u16(), minute = u8();
+      if (energy !== 65535) out.energyKcal = energy;
+      if (hour !== 65535) out.energyPerHour = hour;
+      if (minute !== 255) out.energyPerMinute = minute;
+    }
+    if (flags & 512) { const heart = u8(); if (heart > 0 && heart !== 255) out.heartRate = heart; }
+    if (flags & 1024) { const met = u8(); if (met !== 255) out.met = met / 10; }
+    if (flags & 2048) { const elapsed = u16(); if (elapsed !== 65535) out.bikeElapsedSeconds = elapsed; }
+    if (flags & 4096) { const remaining = u16(); if (remaining !== 65535) out.bikeRemainingSeconds = remaining; }
+    // Compatibility names for Cyclone and Mistral's workout engines.
+    out.speed_kmh = out.speedKph;
+    out.cadence_rpm = out.cadenceRpm;
+    out.distance_m = out.distanceM;
+    out.power_w = out.powerW;
+    for (const key of Object.keys(out)) if (out[key] === undefined) delete out[key];
+    return out;
+  },
+  distanceDelta(previous, current, dt, speed = 0) {
+    if (previous === null || dt > 15 || dt < 0) return 0;
+    let delta = current - previous;
+    if (delta < 0 && previous > 0xffff00 && current < 1000) delta += 0x1000000;
+    const limit = Math.max(100, Math.max(0, speed) / 3.6 * Math.max(dt, 1) * 3 + 20);
+    return delta >= 0 && delta <= limit ? delta : 0;
+  }
+};
+
+const WorkoutData = (() => {
+  const key = 'cyclone-typhoon-distances-v1';
+  let current = null, lastPacket = null, expiring = false;
+  const fields = ['powerW', 'cadenceRpm', 'speedKph', 'heartRate', 'resistance', 'met'];
+  function weight() {
+    const value = Number(localStorage.getItem('typhoon-weight-kg'));
+    return value >= 30 && value <= 250 ? value : 75;
+  }
+  function start(source, capturedWeight = weight()) {
+    const now = performance.now();
+    current = { source, started: now, startedAt: new Date().toISOString(), distanceKm: 0,
+      weightKg: capturedWeight, fields: {}, latest: {}, energyKcal: 0, energySeen: false,
+      previousEnergy: null, last: now, lastWall: Date.now() };
+    lastPacket = now;
+  }
+  function integrate(now) {
+    if (!current) return;
+    const dt = (now - current.last) / 1000;
+    if (dt > 0 && dt <= 5) {
+      for (const field of fields) {
+        const sample = current.latest[field];
+        if (!sample || now - sample.at > 5000) continue;
+        const metric = current.fields[field];
+        metric.integral += sample.value * dt;
+        metric.seconds += dt;
+      }
+    }
+    current.last = now;
+  }
+  function feed(measurement) {
+    lastPacket = performance.now();
+    if (!current) return;
+    integrate(lastPacket);
+    current.lastWall = Date.now();
+    for (const field of fields) {
+      if (!(field in measurement) || !Number.isFinite(measurement[field])) continue;
+      const value = field === 'powerW' ? Math.max(0, measurement[field]) : measurement[field];
+      current.fields[field] ||= { integral: 0, seconds: 0, peak: value };
+      current.fields[field].peak = Math.max(current.fields[field].peak, value);
+      current.latest[field] = { value, at: lastPacket };
+    }
+    if ('energyKcal' in measurement) {
+      if (current.previousEnergy !== null) {
+        const delta = measurement.energyKcal - current.previousEnergy;
+        if (delta >= 0 && delta <= 100) current.energyKcal += delta;
+      }
+      current.previousEnergy = measurement.energyKcal;
+      current.energySeen = true;
+    }
+  }
+  function elapsed() {
+    if (!current) return 0;
+    return Math.max(0, ((expiring ? lastPacket : performance.now()) - current.started) / 1000);
+  }
+  function snapshot() {
+    if (!current) return null;
+    integrate(expiring ? lastPacket : performance.now());
+    return { version: 1, durationSeconds: elapsed(), weightKg: current.weightKg,
+      fields: JSON.parse(JSON.stringify(current.fields)), energyKcal: current.energyKcal,
+      energySeen: current.energySeen, endedAt: new Date(expiring ? current.lastWall : Date.now()).toISOString() };
+  }
+  function finish(source, km) {
+    if (!current || current.source !== source) return null;
+    current.distanceKm = km;
+    const result = snapshot();
+    current = null;
+    return result;
+  }
+  function stale() {
+    return Boolean(current && lastPacket !== null && (performance.now() - lastPacket > 10 * 60 * 1000 || Date.now() - current.lastWall > 10 * 60 * 1000));
+  }
+  function expire(section) {
+    if (!stale()) return;
+    expiring = true;
+    section.expire();
+    expiring = false;
+  }
+  function attach(entry) {
+    const metrics = finish(entry.source, entry.km);
+    if (metrics) { entry.metrics = metrics; entry.endedAt = metrics.endedAt; }
+    return entry;
+  }
+  function legacy(entry, sessions) {
+    if (entry.metrics) return entry.metrics;
+    const ride = sessions.find(item => `typhoon-${item.id}` === entry.id);
+    if (!ride) return null;
+    const seconds = Number(ride.durationSeconds) || Number(ride.durationMinutes) * 60;
+    if (!(seconds > 0)) return null;
+    const metrics = { durationSeconds: seconds, weightKg: Number(ride.weightKg) || 75, fields: {}, legacy: true };
+    for (const [field, average, peak] of [
+      ['powerW', 'averagePowerW', 'topPowerW'], ['cadenceRpm', 'averageCadenceRpm', 'topCadenceRpm'],
+      ['speedKph', 'averageSpeedKph', 'topSpeedKph']
+    ]) {
+      if (Number.isFinite(ride[average])) metrics.fields[field] = {
+        integral: ride[average] * seconds, seconds, peak: Number(ride[peak]) || ride[average]
+      };
+    }
+    if (Number.isFinite(ride.calories)) metrics.legacyCalories = ride.calories;
+    return metrics;
+  }
+  function entries() {
+    let ledger = [], sessions = [];
+    try { ledger = JSON.parse(localStorage.getItem(key) || '[]'); } catch (error) {}
+    try { sessions = JSON.parse(localStorage.getItem('typhoon-sessions-v1') || '[]'); } catch (error) {}
+    if (!Array.isArray(ledger)) ledger = [];
+    if (!Array.isArray(sessions)) sessions = [];
+    const result = ledger.map(entry => ({ ...entry, metrics: legacy(entry, sessions) }));
+    if (current) result.push({ source: current.source, endedAt: new Date().toISOString(), km: current.distanceKm, metrics: snapshot(), live: true });
+    return result;
+  }
+  function distance(metres) { if (current) current.distanceKm = metres / 1000; }
+  function disconnected() { if (current) { current.latest = {}; current.previousEnergy = null; } }
+  return { start, feed, distance, attach, elapsed, expire, entries, disconnected, weight };
+})();
+
 "use strict";
 // One document owns the native GATT connection for all workout sections.
 const sections = {};
 let activeSection = null;
 const Bike = (() => {
   let device = null, characteristic = null, pending = null, retryTimer = null;
+  let lastNotificationAt = 0;
   const FTMS = 0x1826, IBD = 0x2ad2;
   const isConnected = () => Boolean(device?.gatt?.connected && characteristic);
   function notify() {
     for (const section of Object.values(sections)) section.connection(device);
   }
   function onData(event) {
+    if (activeSection) { sections[activeSection].cancelStaleStart?.(); WorkoutData.expire(sections[activeSection]); }
+    let measurement;
+    try { measurement = BikeData.parse(event.target.value); } catch (error) { return; }
+    lastNotificationAt = Date.now();
+    WorkoutData.feed(measurement);
     if (activeSection) sections[activeSection].data(event);
   }
   function retry() {
@@ -19,6 +192,7 @@ const Bike = (() => {
     }, 3000);
   }
   function onDisconnected() {
+    WorkoutData.disconnected();
     if (characteristic) characteristic.removeEventListener("characteristicvaluechanged", onData);
     characteristic = null;
     for (const section of Object.values(sections)) section.disconnected();
@@ -28,6 +202,7 @@ const Bike = (() => {
     if (isConnected()) return device;
     if (pending) return pending;
     clearTimeout(retryTimer);
+    for (const section of Object.values(sections)) section.connecting();
     pending = (async () => {
       if (device && device !== chosen) device.removeEventListener("gattserverdisconnected", onDisconnected);
       device = chosen;
@@ -77,7 +252,15 @@ const Bike = (() => {
       if (chosen) await ensure(chosen);
     } catch (error) { if (device) retry(); }
   }
-  return { connect, ensure, autoConnect, isConnected, get device() { return device; } };
+  function resume() {
+    if (activeSection) { sections[activeSection].cancelStaleStart?.(); WorkoutData.expire(sections[activeSection]); }
+    if (device && (!isConnected() || (lastNotificationAt && Date.now() - lastNotificationAt > 30000))) {
+      if (characteristic) characteristic.removeEventListener("characteristicvaluechanged", onData);
+      characteristic = null;
+      ensure(device).catch(retry);
+    }
+  }
+  return { connect, ensure, autoConnect, resume, isConnected, get device() { return device; } };
 })();
 
 // Engines keep their own DOM, metrics, histories and audio without duplicate IDs.
@@ -99,6 +282,8 @@ function showSection(name, updateHistory = true) {
   navigation = navigation.then(async () => {
     if (!Object.hasOwn(sections, name)) name = null;
     if (name === activeSection) return;
+    MoreData.close();
+    if (activeSection) { sections[activeSection].cancelStaleStart?.(); WorkoutData.expire(sections[activeSection]); }
     const previous = activeSection;
     if (previous) await sections[previous].leave();
     activeSection = name;
@@ -118,6 +303,128 @@ function showSection(name, updateHistory = true) {
   });
   return navigation;
 }
+
+window.addEventListener("pageshow", () => Bike.resume());
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") Bike.resume(); });
+
+const MoreData = (() => {
+  const $ = id => document.getElementById(id);
+  const dialog = $('more-data-dialog');
+  let period = 'today', unit = 'km', timer = null, returnFocus = null;
+  const dateKey = date => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+  function time(seconds) {
+    const total = Math.round(seconds);
+    return `${Math.floor(total / 3600)}:${String(Math.floor(total / 60) % 60).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+  }
+  function render() {
+    const entries = WorkoutData.entries().filter(entry => period === 'all' || dateKey(new Date(entry.endedAt)) === dateKey(new Date()));
+    const detailed = entries.filter(entry => entry.metrics);
+    const factor = unit === 'miles' ? 1 / 1.609344 : 1;
+    const distanceUnit = unit === 'miles' ? 'miles' : 'km';
+    const speedUnit = unit === 'miles' ? 'mph' : 'km/h';
+    const totalDistance = entries.reduce((sum, entry) => sum + (Number(entry.km) || 0), 0);
+    const totalSeconds = detailed.reduce((sum, entry) => sum + entry.metrics.durationSeconds, 0);
+    const knownDistance = detailed.reduce((sum, entry) => sum + (Number(entry.km) || 0), 0);
+    const metric = field => {
+      const present = detailed.map(entry => entry.metrics.fields[field]).filter(Boolean);
+      return present.length ? {
+        integral: present.reduce((sum, item) => sum + item.integral, 0),
+        seconds: present.reduce((sum, item) => sum + item.seconds, 0),
+        peak: Math.max(...present.map(item => item.peak))
+      } : null;
+    };
+    const average = (field, suffix, scale = 1) => {
+      const item = metric(field);
+      return item?.seconds > 0 ? `${(item.integral / item.seconds * scale).toFixed(1)} ${suffix}` : 'Not recorded';
+    };
+    const peak = (field, suffix, scale = 1) => {
+      const item = metric(field);
+      return item ? `${(item.peak * scale).toFixed(1)} ${suffix}` : 'Not recorded';
+    };
+    const power = metric('powerW');
+    let kgIntegral = 0, kgSeconds = 0, kgPeak = null, calories = 0, calorieCount = 0, estimated = false, reported = false;
+    for (const { metrics: m } of detailed) {
+      const p = m.fields.powerW;
+      if (p && m.weightKg > 0) {
+        kgIntegral += p.integral / m.weightKg; kgSeconds += p.seconds;
+        kgPeak = Math.max(kgPeak ?? 0, p.peak / m.weightKg);
+      }
+      if (m.energySeen) { calories += m.energyKcal; calorieCount++; reported = true; }
+      else if (Number.isFinite(m.legacyCalories)) { calories += m.legacyCalories; calorieCount++; estimated = true; }
+      else if (p?.seconds > 0) { calories += p.integral / 4184 / 0.24; calorieCount++; estimated = true; }
+    }
+    const groups = [
+      ['Activity', [
+        ['Workouts', String(entries.length)],
+        ['Distance', `${(totalDistance * factor).toFixed(2)} ${distanceUnit}`],
+        ['Total time', detailed.length || !entries.length ? time(totalSeconds) : 'Not recorded'],
+        ['Average speed', totalSeconds > 0 ? `${(knownDistance / (totalSeconds / 3600) * factor).toFixed(1)} ${speedUnit}` : 'Not recorded'],
+        ['Peak speed', peak('speedKph', speedUnit, factor)]
+      ]],
+      ['Energy and power', [
+        [`Calories${estimated ? (reported ? ' (bike + estimated)' : ' (estimated)') : (reported ? ' (bike)' : '')}`, calorieCount ? `${calories.toFixed(0)} kcal` : 'Not recorded'],
+        ['Total work', power?.seconds > 0 ? `${(power.integral / 1000).toFixed(1)} kJ` : 'Not recorded'],
+        ['Average power', average('powerW', 'W')], ['Peak power', peak('powerW', 'W')],
+        ['Average Watts per kilo', kgSeconds > 0 ? `${(kgIntegral / kgSeconds).toFixed(2)} W/kg` : 'Not recorded'],
+        ['Peak Watts per kilo', kgPeak !== null ? `${kgPeak.toFixed(2)} W/kg` : 'Not recorded']
+      ]],
+      ['Cadence and body measurements', [
+        ['Average cadence', average('cadenceRpm', 'RPM')], ['Peak cadence', peak('cadenceRpm', 'RPM')],
+        ['Average heart rate', average('heartRate', 'bpm')], ['Peak heart rate', peak('heartRate', 'bpm')],
+        ['Average resistance level', average('resistance', '')], ['Peak resistance level', peak('resistance', '')],
+        ['Average metabolic equivalent', average('met', 'MET')]
+      ]]
+    ];
+    const content = $('more-data-content');
+    // Preserve the DOM while reading it with a screen reader; update text only.
+    for (const [groupIndex, [title, rows]] of groups.entries()) {
+      let list = content.querySelector(`[data-group="${groupIndex}"]`);
+      if (!list) {
+        const heading = document.createElement('h3'); heading.textContent = title; content.append(heading);
+        list = document.createElement('dl'); list.dataset.group = groupIndex; content.append(list);
+        for (let i = 0; i < rows.length; i++) {
+          const row = document.createElement('div'); row.className = 'data-row';
+          row.append(document.createElement('dt'), document.createElement('dd')); list.append(row);
+        }
+      }
+      rows.forEach(([label, value], index) => {
+        const row = list.children[index];
+        if (row.children[0].textContent !== label) row.children[0].textContent = label;
+        if (row.children[1].textContent !== value) row.children[1].textContent = value;
+      });
+    }
+    const missing = entries.length - detailed.length;
+    $('data-coverage').textContent = missing ? `${missing} older ride${missing === 1 ? ' has' : 's have'} distance only. Other totals and averages use the rides with recorded detail.` : (entries.some(entry => entry.live) ? 'Includes the current workout so far.' : 'Totals use the measurements recorded during your rides.');
+  }
+  function select(value) {
+    period = value;
+    $('data-today').setAttribute('aria-pressed', String(value === 'today'));
+    $('data-all-time').setAttribute('aria-pressed', String(value === 'all'));
+    render();
+  }
+  function open(selectedUnit = 'km', opener = document.activeElement) {
+    returnFocus = opener;
+    unit = selectedUnit;
+    $('data-weight').value = String(WorkoutData.weight());
+    $('data-weight-status').textContent = '';
+    select('today');
+    dialog.showModal();
+    $('data-today').focus();
+    clearInterval(timer); timer = setInterval(render, 1000);
+  }
+  $('data-today').addEventListener('click', () => select('today'));
+  $('data-all-time').addEventListener('click', () => select('all'));
+  $('close-more-data').addEventListener('click', () => dialog.close());
+  dialog.addEventListener('close', () => { clearInterval(timer); timer = null; returnFocus?.focus(); });
+  $('data-weight-form').addEventListener('submit', event => {
+    event.preventDefault();
+    const weight = Number($('data-weight').value);
+    if (!Number.isFinite(weight) || weight < 30 || weight > 250) return;
+    localStorage.setItem('typhoon-weight-kg', String(weight));
+    $('data-weight-status').textContent = `Weight saved: ${weight} kg. It will be used for future rides.`;
+  });
+  return { open, close: () => { if (dialog.open) dialog.close(); } };
+})();
 
 
 // Cyclone workout engine
@@ -217,9 +524,9 @@ function saveDistanceLedger(ledger) {
 }
 
 function recordDistance(km) {
-  if (!(km > 0)) return;
+  if (!(km >= 0)) return;
   const ledger = loadDistanceLedger();
-  ledger.push({ id: `cyclone-${Date.now()}-${Math.random().toString(16).slice(2)}`, source: "cyclone", endedAt: new Date().toISOString(), km: Number(km.toFixed(3)) });
+  ledger.push(WorkoutData.attach({ id: `cyclone-${Date.now()}-${Math.random().toString(16).slice(2)}`, source: "cyclone", endedAt: new Date().toISOString(), km: Number(km.toFixed(3)) }));
   saveDistanceLedger(ledger);
 }
 
@@ -253,24 +560,7 @@ function renderStats() {
   $("stat-alltime").textContent = `${allKm.toFixed(2)} km`;
 }
 
-function parseBike(dv) {
-  const flags = dv.getUint16(0, true); let o = 2; const out = {};
-  const u16 = () => { const v = dv.getUint16(o, true); o += 2; return v; };
-  const s16 = () => { const v = dv.getInt16(o, true); o += 2; return v; };
-  const u24 = () => { const a = dv.getUint8(o), b = dv.getUint8(o+1), c = dv.getUint8(o+2); o += 3; return a|(b<<8)|(c<<16); };
-  const u8  = () => { const v = dv.getUint8(o); o += 1; return v; };
-  if (!(flags & 1))  out.speed_kmh   = u16() / 100;
-  if (flags & 2)     u16();
-  if (flags & 4)     out.cadence_rpm = u16() / 2;
-  if (flags & 8)     u16();
-  if (flags & 16)    out.distance_m  = u24();
-  if (flags & 32)    s16();
-  if (flags & 64)    out.power_w     = s16();
-  if (flags & 128)   s16();
-  if (flags & 256)   u16();
-  if (flags & 512)   u8();
-  return out;
-}
+function parseBike(view) { return BikeData.parse(view); }
 
 function onData(e) {
   const m = parseBike(e.target.value);
@@ -279,8 +569,8 @@ function onData(e) {
   if (sessionActive && "cadence_rpm" in m) updateRpm(m.cadence_rpm);
   if ("distance_m" in m) {
     if (sessionActive && lastRawDistanceM !== null) {
-      const delta = m.distance_m - lastRawDistanceM;
-      if (delta >= 0) sessionDistanceM += delta;
+      const dt = lastT === null ? 0 : now - lastT;
+      sessionDistanceM += BikeData.distanceDelta(lastRawDistanceM, m.distance_m, dt, latestSpeed_kmh);
     }
     lastRawDistanceM = m.distance_m;
   } else if (sessionActive) {
@@ -288,6 +578,7 @@ function onData(e) {
     if (dt > 0 && dt < 5) sessionDistanceM += (latestSpeed_kmh * 1000 / 3600) * dt;
   }
   lastT = now;
+  if (sessionActive) WorkoutData.distance(sessionDistanceM);
 }
 
 function setSessionUI() {
@@ -349,7 +640,7 @@ function ensureAudioContext() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) return false;
   if (!audioContext) audioContext = new AudioContextClass();
-  if (audioContext.state === "suspended") audioContext.resume().catch(() => {});
+  if (audioContext.state === "suspended" || audioContext.state === "interrupted") audioContext.resume().catch(() => {});
   return true;
 }
 function cancelSignals() {
@@ -396,6 +687,9 @@ async function startWorkoutAudio() {
   $("audio-status").hidden = true;
   audio.pause();
   cancelSignals();
+  ensureAudioContext();
+  const audioReady = audioContext && audioContext.state !== "running"
+    ? audioContext.resume().then(() => true, () => false) : Promise.resolve(true);
   // Start the media while the Start tap still grants playback permission.
   // Silence its Web Audio output rather than muting and restarting the element.
   let playbackFailed = false;
@@ -413,9 +707,23 @@ async function startWorkoutAudio() {
       Promise.resolve(audio.play()).catch(() => { playbackFailed = true; });
     } catch (error) { playbackFailed = true; }
   }
+  const ready = await Promise.race([audioReady, new Promise(resolve => setTimeout(() => resolve(false), 3000))]);
+  if (generation !== startGeneration || !sessionActive) return;
+  if (!ready) {
+    audio.pause();
+    audio.muted = false;
+    if (workoutMediaGain) workoutMediaGain.gain.setValueAtTime(1, audioContext.currentTime);
+    setStartingAudio(false);
+    const message = audio.src ? "Your phone has paused workout audio. Tap Play to resume it." : "Your workout is running, but your phone could not play the opening tones.";
+    $("audio-status").textContent = message;
+    $("audio-status").hidden = false;
+    speak(message);
+    return;
+  }
   for (const delay of [0, 0.9, 1.8]) beep(500, 0.32, delay);
   beep(1000, 0.65, 2.7);
   await new Promise(resolve => setTimeout(resolve, 4400));
+  WorkoutData.expire(sections.cyclone);
   if (generation !== startGeneration || !sessionActive) return;
   if (audio.src) audio.currentTime = 0;
   audio.muted = false;
@@ -448,7 +756,7 @@ function stopWorkoutAudio() {
 }
 
 async function startSession() {
-  if (!connected || !device || !device.gatt || !device.gatt.connected) {
+  if (!Bike.isConnected() || !connected || !device || !device.gatt || !device.gatt.connected) {
     setDisconnectedUI();
     return;
   }
@@ -456,6 +764,7 @@ async function startSession() {
   lastT = null;
   lastRawDistanceM = null;
   latestSpeed_kmh = 0;
+  WorkoutData.start("cyclone");
   setSessionUI();
   await startWorkoutAudio();
 }
@@ -528,6 +837,7 @@ function workoutName(file) {
 
 async function togglePlayback() {
   if (startingAudio) return;
+  ensureAudioContext();
   const audio = $("workout-audio");
   const playBtn = $("play-btn");
   if (audio.paused) {
@@ -548,11 +858,13 @@ function updatePlaybackButton() {
 }
 
 $("main-btn").addEventListener("click", () => {
+  WorkoutData.expire(sections.cyclone);
   if (sessionActive) stop();
   else if (connected) startSession();
   else connect();
 });
 $("home-btn").addEventListener("click", leaveCyclone);
+$("more-data-btn").addEventListener("click", () => MoreData.open("km", $("more-data-btn")));
 $("reset-btn").addEventListener("click", resetData);
 $("choose-audio-btn").addEventListener("click", chooseWorkout);
 $("audio-file").addEventListener("change", loadWorkout);
@@ -565,12 +877,28 @@ renderStats();
 
 sections["cyclone"] = {
   data: onData,
+  expire() {
+    if (sessionActive) {
+
+      stop();
+    }
+    ++startGeneration;
+    cancelSignals();
+    clearTimeout(speakTimer);
+
+    $("spoken").textContent = "";
+  },
+
   connection(chosen) {
     device = chosen;
     connected = true;
     lastT = null;
     lastRawDistanceM = null;
     if (sessionActive) setSessionUI(); else setReadyUI();
+  },
+  connecting() {
+    if (sessionActive) setInterruptedUI();
+    else { setDisconnectedUI(); $("main-btn").disabled = true; }
   },
   disconnected: onUnexpectedDisconnect,
   enter() {
@@ -653,6 +981,7 @@ let latest = { speedKph: 0, cadenceRpm: 0, powerW: 0, heartRate: 0 };
 
 let workoutActive = false;
 let startingWorkout = false;
+let startupRequestedAt = 0;
 let workoutGeneration = 0;
 const signalOscillators = new Set();
 function cancelSignals() {
@@ -744,11 +1073,11 @@ function saveDistanceLedger(ledger) { safeSet(DISTANCE_KEY, JSON.stringify(ledge
 
 function recordCombinedDistance(result) {
   const km = Number(result.distanceKm);
-  if (!(km > 0)) return;
+  if (!(km >= 0)) return;
   const id = `typhoon-${result.id}`;
   const ledger = loadDistanceLedger();
   if (ledger.some(entry => entry.id === id)) return;
-  ledger.push({ id, source: "typhoon", endedAt: result.endedAt, km });
+  ledger.push(WorkoutData.attach({ id, source: "typhoon", endedAt: result.endedAt, km }));
   saveDistanceLedger(ledger);
 }
 
@@ -883,12 +1212,12 @@ function ensureAudioContext() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) return false;
   if (!audioContext) audioContext = new AudioContextClass();
-  if (audioContext.state === "suspended") audioContext.resume().catch(() => {});
+  if (audioContext.state === "suspended" || audioContext.state === "interrupted") audioContext.resume().catch(() => {});
   return true;
 }
 
 function warmAudioOutput() {
-  if (!ensureAudioContext()) return;
+  if (!ensureAudioContext() || audioContext.state !== "running") return;
   const oscillator = audioContext.createOscillator();
   const gain = audioContext.createGain();
   const now = audioContext.currentTime;
@@ -901,7 +1230,7 @@ function warmAudioOutput() {
 }
 
 function beep(frequency, durationSeconds, delaySeconds = 0) {
-  if (!ensureAudioContext()) return;
+  if (!ensureAudioContext() || audioContext.state !== "running") return;
   const oscillator = audioContext.createOscillator();
   const master = audioContext.createGain();
   const start = audioContext.currentTime + delaySeconds;
@@ -935,6 +1264,7 @@ async function runCountdown(generation) {
     $("countdown").textContent = String(number);
     beep(500, 0.32);
     await wait(900);
+    sections.typhoon.cancelStaleStart();
     if (generation !== workoutGeneration) return;
   }
   $("countdown").textContent = "Go";
@@ -1058,20 +1388,26 @@ function configureMediaControls() {
 }
 
 async function startWorkout() {
-  if (!connected || workoutActive || startingWorkout) return;
+  if (!Bike.isConnected() || !connected || workoutActive || startingWorkout) return;
   const generation = ++workoutGeneration;
   startingWorkout = true;
+  startupRequestedAt = Date.now();
   currentWorkoutWeightKg = loadWeightKg();
   selectedDurationSeconds = selectedMinutes() * 60;
   playbackPlan = createPlaybackPlan(selectedDurationSeconds);
   playbackIndex = 0;
   heardTrackIds = [];
   ensureAudioContext();
+  const audioReady = audioContext && audioContext.state !== "running"
+    ? audioContext.resume().then(() => true, () => false) : Promise.resolve(true);
   await unlockMusic(playbackPlan[0], generation);
   if (generation !== workoutGeneration) return;
   setSetupEnabled(false);
   await acquireWakeLock();
   if (generation !== workoutGeneration) { await releaseWakeLock(); return; }
+  await Promise.race([audioReady, new Promise(resolve => setTimeout(resolve, 3000))]);
+  sections.typhoon.cancelStaleStart();
+  if (generation !== workoutGeneration) return;
   await runCountdown(generation);
   if (generation !== workoutGeneration) return;
   startingWorkout = false;
@@ -1086,6 +1422,7 @@ async function startWorkout() {
   announcedTimeMilestones = new Set();
   workoutStartPerformance = performance.now();
   workoutActive = true;
+  WorkoutData.start("typhoon", currentWorkoutWeightKg);
   updateMainAction();
   $("main-action").disabled = false;
   $("countdown-section").hidden = true;
@@ -1260,8 +1597,8 @@ async function finishWorkout(completed, statusText) {
   if (completed) {
     sessions.push(result);
     saveSessions(sessions);
-    recordCombinedDistance(result);
   }
+  recordCombinedDistance(result);
   if (completed) { finishSignal(); await wait(1100); }
   await releaseWakeLock();
   if (generation !== workoutGeneration) return;
@@ -1294,30 +1631,7 @@ function updateCadenceSpeech(cadenceRpm) {
   }
 }
 
-function parseBike(dataView) {
-  const flags = dataView.getUint16(0, true);
-  let offset = 2;
-  const output = {};
-  const u8 = () => { const value = dataView.getUint8(offset); offset += 1; return value; };
-  const u16 = () => { const value = dataView.getUint16(offset, true); offset += 2; return value; };
-  const s16 = () => { const value = dataView.getInt16(offset, true); offset += 2; return value; };
-  const u24 = () => { const value = dataView.getUint8(offset) | (dataView.getUint8(offset + 1) << 8) | (dataView.getUint8(offset + 2) << 16); offset += 3; return value; };
-  if (!(flags & 1)) output.speedKph = u16() / 100;
-  if (flags & 2) u16();
-  if (flags & 4) output.cadenceRpm = u16() / 2;
-  if (flags & 8) u16();
-  if (flags & 16) output.distanceM = u24();
-  if (flags & 32) s16();
-  if (flags & 64) output.powerW = s16();
-  if (flags & 128) s16();
-  if (flags & 256) {
-    output.energyKcal = u16();
-    u16();
-    u8();
-  }
-  if (flags & 512) output.heartRate = u8();
-  return output;
-}
+function parseBike(view) { return BikeData.parse(view); }
 
 function onBikeData(event) {
   let measurement;
@@ -1337,9 +1651,7 @@ function onBikeData(event) {
 
   if ("distanceM" in measurement) {
     if (workoutActive && lastRawDistanceM !== null) {
-      let delta = measurement.distanceM - lastRawDistanceM;
-      if (delta < 0) delta = measurement.distanceM;
-      if (delta >= 0 && delta < 100) workoutMetrics.distanceM += delta;
+      workoutMetrics.distanceM += BikeData.distanceDelta(lastRawDistanceM, measurement.distanceM, dataDelta, latest.speedKph);
     }
     lastRawDistanceM = measurement.distanceM;
   } else if (workoutActive && dataDelta > 0 && dataDelta < 3) {
@@ -1359,6 +1671,7 @@ function onBikeData(event) {
     workoutMetrics.topPowerW = Math.max(workoutMetrics.topPowerW, latest.powerW);
     workoutMetrics.topCadenceRpm = Math.max(workoutMetrics.topCadenceRpm, latest.cadenceRpm);
     workoutMetrics.topSpeedKph = Math.max(workoutMetrics.topSpeedKph, latest.speedKph);
+    WorkoutData.distance(workoutMetrics.distanceM);
     updateLiveDisplay();
   }
 }
@@ -1502,8 +1815,11 @@ function saveWeight(event) {
 
 function init() {
   $("home-btn").addEventListener("click", () => { showSection(null); });
+  $("more-data-btn").addEventListener("click", () => MoreData.open("km", $("more-data-btn")));
   for (const button of document.querySelectorAll(".duration-choice")) button.addEventListener("click", chooseDuration);
   $("main-action").addEventListener("click", () => {
+    sections.typhoon.cancelStaleStart();
+    WorkoutData.expire(sections.typhoon);
     if (workoutActive) finishWorkout(false, "Workout ended early. The incomplete result was not saved.");
     else if (connected) startWorkout();
     else connect();
@@ -1531,6 +1847,21 @@ init();
 
 sections.typhoon = {
   data: onBikeData,
+  cancelStaleStart() {
+    if (!startingWorkout || Date.now() - startupRequestedAt < 60000) return;
+    ++workoutGeneration;
+    startingWorkout = false;
+    cancelSignals();
+    $("music").pause(); $("music-preload").pause();
+    $("countdown-section").hidden = true;
+    $("setup-section").hidden = false;
+    setSetupEnabled(true); updateMainAction();
+  },
+  expire() {
+    ++workoutGeneration; startingWorkout = false;
+    if (workoutActive) finishWorkout(false, "Previous workout ended.");
+    cancelSignals(); clearTimeout(spokenTimer); $("spoken").textContent = "";
+  },
   connection(chosen) {
     device = chosen;
     connected = true;
@@ -1539,6 +1870,11 @@ sections.typhoon = {
     lastCadenceBand = null;
     if (!startingWorkout && !workoutActive) setSetupEnabled(true);
     updateMainAction();
+  },
+  connecting() {
+    connected = false;
+    updateMainAction();
+    if (!workoutActive) $("main-action").disabled = true;
   },
   disconnected: onDisconnected,
   enter() {
@@ -1732,9 +2068,9 @@ function saveDistanceLedger(ledger) {
 }
 
 function recordDistance(km) {
-  if (!(km > 0)) return;
+  if (!(km >= 0)) return;
   const ledger = loadDistanceLedger();
-  ledger.push({ id: `mistral-${Date.now()}-${Math.random().toString(16).slice(2)}`, source: "mistral", endedAt: new Date().toISOString(), km: Number(km.toFixed(3)) });
+  ledger.push(WorkoutData.attach({ id: `mistral-${Date.now()}-${Math.random().toString(16).slice(2)}`, source: "mistral", endedAt: new Date().toISOString(), km: Number(km.toFixed(3)) }));
   saveDistanceLedger(ledger);
 }
 
@@ -1768,24 +2104,7 @@ function renderStats() {
   $("stat-alltime").textContent = `${distanceText(allKm)}`;
 }
 
-function parseBike(dv) {
-  const flags = dv.getUint16(0, true); let o = 2; const out = {};
-  const u16 = () => { const v = dv.getUint16(o, true); o += 2; return v; };
-  const s16 = () => { const v = dv.getInt16(o, true); o += 2; return v; };
-  const u24 = () => { const a = dv.getUint8(o), b = dv.getUint8(o+1), c = dv.getUint8(o+2); o += 3; return a|(b<<8)|(c<<16); };
-  const u8  = () => { const v = dv.getUint8(o); o += 1; return v; };
-  if (!(flags & 1))  out.speed_kmh   = u16() / 100;
-  if (flags & 2)     u16();
-  if (flags & 4)     out.cadence_rpm = u16() / 2;
-  if (flags & 8)     u16();
-  if (flags & 16)    out.distance_m  = u24();
-  if (flags & 32)    s16();
-  if (flags & 64)    out.power_w     = s16();
-  if (flags & 128)   s16();
-  if (flags & 256)   u16();
-  if (flags & 512)   u8();
-  return out;
-}
+function parseBike(view) { return BikeData.parse(view); }
 
 function onData(e) {
   const m = parseBike(e.target.value);
@@ -1794,8 +2113,8 @@ function onData(e) {
   if (sessionActive && "cadence_rpm" in m) updateRpm(m.cadence_rpm);
   if ("distance_m" in m) {
     if (sessionActive && lastRawDistanceM !== null) {
-      const delta = m.distance_m - lastRawDistanceM;
-      if (delta >= 0) sessionDistanceM += delta;
+      const dt = lastT === null ? 0 : now - lastT;
+      sessionDistanceM += BikeData.distanceDelta(lastRawDistanceM, m.distance_m, dt, latestSpeed_kmh);
     }
     lastRawDistanceM = m.distance_m;
   } else if (sessionActive) {
@@ -1803,7 +2122,7 @@ function onData(e) {
     if (dt > 0 && dt < 5) sessionDistanceM += (latestSpeed_kmh * 1000 / 3600) * dt;
   }
   lastT = now;
-  if (sessionActive) updateDistance();
+  if (sessionActive) { WorkoutData.distance(sessionDistanceM); updateDistance(); }
 }
 
 function setSessionUI() {
@@ -1894,7 +2213,7 @@ function ensureAudioContext() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) return false;
   if (!audioContext) audioContext = new AudioContextClass();
-  if (audioContext.state === "suspended") audioContext.resume().catch(() => {});
+  if (audioContext.state === "suspended" || audioContext.state === "interrupted") audioContext.resume().catch(() => {});
   return true;
 }
 function cancelSignals() {
@@ -1941,6 +2260,9 @@ async function startWorkoutAudio() {
   $("audio-status").hidden = true;
   audio.pause();
   cancelSignals();
+  ensureAudioContext();
+  const audioReady = audioContext && audioContext.state !== "running"
+    ? audioContext.resume().then(() => true, () => false) : Promise.resolve(true);
   // Start the media while the Start tap still grants playback permission.
   // Silence its Web Audio output rather than muting and restarting the element.
   let playbackFailed = false;
@@ -1958,9 +2280,23 @@ async function startWorkoutAudio() {
       Promise.resolve(audio.play()).catch(() => { playbackFailed = true; });
     } catch (error) { playbackFailed = true; }
   }
+  const ready = await Promise.race([audioReady, new Promise(resolve => setTimeout(() => resolve(false), 3000))]);
+  if (generation !== startGeneration || !sessionActive) return;
+  if (!ready) {
+    audio.pause();
+    audio.muted = false;
+    if (workoutMediaGain) workoutMediaGain.gain.setValueAtTime(1, audioContext.currentTime);
+    setStartingAudio(false);
+    const message = audio.src ? "Your phone has paused workout audio. Tap Play to resume it." : "Your workout is running, but your phone could not play the opening tones.";
+    $("audio-status").textContent = message;
+    $("audio-status").hidden = false;
+    speak(message);
+    return;
+  }
   for (const delay of [0, 0.9, 1.8]) beep(500, 0.32, delay);
   beep(1000, 0.65, 2.7);
   await new Promise(resolve => setTimeout(resolve, 4400));
+  WorkoutData.expire(sections.mistral);
   if (generation !== startGeneration || !sessionActive) return;
   if (audio.src) audio.currentTime = 0;
   audio.muted = false;
@@ -1994,7 +2330,7 @@ function stopWorkoutAudio() {
 
 async function startSession() {
   if (targetDistance === null) return;
-  if (!connected || !device || !device.gatt || !device.gatt.connected) {
+  if (!Bike.isConnected() || !connected || !device || !device.gatt || !device.gatt.connected) {
     setDisconnectedUI();
     return;
   }
@@ -2010,6 +2346,7 @@ async function startSession() {
   lastT = null;
   lastRawDistanceM = null;
   latestSpeed_kmh = 0;
+  WorkoutData.start("mistral");
   setSessionUI();
   await startWorkoutAudio();
 }
@@ -2085,6 +2422,7 @@ function workoutName(file) {
 
 async function togglePlayback() {
   if (startingAudio) return;
+  ensureAudioContext();
   const audio = $("workout-audio");
   const playBtn = $("play-btn");
   if (audio.paused) {
@@ -2105,11 +2443,13 @@ function updatePlaybackButton() {
 }
 
 $("main-btn").addEventListener("click", () => {
+  WorkoutData.expire(sections.mistral);
   if (sessionActive) stop();
   else if (connected) startSession();
   else connect();
 });
 $("home-btn").addEventListener("click", leaveCyclone);
+$("more-data-btn").addEventListener("click", () => MoreData.open(unit, $("more-data-btn")));
 $("reset-btn").addEventListener("click", resetData);
 $("choose-audio-btn").addEventListener("click", chooseWorkout);
 $("audio-file").addEventListener("change", loadWorkout);
@@ -2142,12 +2482,28 @@ renderStats();
 
 sections["mistral"] = {
   data: onData,
+  expire() {
+    if (sessionActive) {
+      sessionStartedAt = performance.now() - WorkoutData.elapsed() * 1000;
+      stop();
+    }
+    ++startGeneration;
+    cancelSignals();
+    clearTimeout(speakTimer);
+    clearTimeout(resultAnnouncementTimer); clearTimeout(speakUpdateTimer); $("results-section").hidden = true;
+    $("spoken").textContent = "";
+  },
+
   connection(chosen) {
     device = chosen;
     connected = true;
     lastT = null;
     lastRawDistanceM = null;
     if (sessionActive) setSessionUI(); else setReadyUI();
+  },
+  connecting() {
+    if (sessionActive) setInterruptedUI();
+    else { setDisconnectedUI(); $("main-btn").disabled = true; }
   },
   disconnected: onUnexpectedDisconnect,
   enter() {

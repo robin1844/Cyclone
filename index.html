@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light dark" />
 <title>Cyclone</title>
-<link rel="stylesheet" href="app.css?v=9dc22058eddd" />
+<link rel="stylesheet" href="app.css?v=40de63c86069" />
 </head>
 <body>
 <div id="launcher">
@@ -13,6 +13,26 @@
   <button type="button" id="open-typhoon" data-section="typhoon">Typhoon</button>
   <button type="button" id="open-mistral" data-section="mistral">Mistral</button>
 </div>
+<dialog id="more-data-dialog" aria-labelledby="more-data-heading">
+  <button id="close-more-data" type="button">Close</button>
+  <h2 id="more-data-heading">More data</h2>
+  <div class="data-tabs" role="group" aria-label="Time period">
+    <button id="data-today" type="button" aria-pressed="true">Today</button>
+    <button id="data-all-time" type="button" aria-pressed="false">All time</button>
+  </div>
+  <p>Combined rides from Cyclone, Typhoon and Mistral.</p>
+  <div id="more-data-content"></div>
+  <p id="data-coverage"></p>
+  <p>“Not recorded” means the bike did not supply that measurement, or it was not saved for older rides. Calories calculated from power are estimates.</p>
+  <form id="data-weight-form">
+    <label for="data-weight">Body weight for future rides (kg)</label>
+    <input id="data-weight" type="number" min="30" max="250" step="0.1" required />
+    <button type="submit">Save weight</button>
+    <p>Watts per kilo uses the body weight saved when each ride started. The default is 75 kg.</p>
+    <p id="data-weight-status" role="status"></p>
+  </form>
+</dialog>
+
 <div id="cyclone-section" class="workout-section" hidden>
 <div id="cyclone-page-header">
   <div id="cyclone-header-inner">
@@ -57,6 +77,7 @@
   </div>
 
   <button id="cyclone-reset-btn">Reset all distance data</button>
+  <button id="cyclone-more-data-btn" class="more-data-button" type="button">More data</button>
 </div>
 
 <p id="cyclone-spoken" class="vh" aria-live="assertive" aria-atomic="true"></p>
@@ -115,6 +136,8 @@
     <div class="stat-row"><span class="stat-label">Last 30 days</span><span class="stat-value" id="typhoon-distance-month">0.00 kilometres</span></div>
     <div class="stat-row"><span class="stat-label">All time</span><span class="stat-value" id="typhoon-distance-all">0.00 kilometres</span></div>
   </section>
+
+  <button id="typhoon-more-data-btn" class="more-data-button" type="button">More data</button>
 
   <div id="typhoon-post-workout-actions" hidden>
     <button id="typhoon-another-workout" type="button">Another workout</button>
@@ -197,6 +220,7 @@
 
   <button id="mistral-reset-btn">Reset all distance data</button>
   <button id="mistral-change-distance-btn" type="button">Choose distance</button>
+  <button id="mistral-more-data-btn" class="more-data-button" type="button">More data</button>
   </div>
 </div>
 
@@ -204,6 +228,6 @@
 <p id="mistral-spoken" class="vh" aria-live="assertive" aria-atomic="true"></p>
 </div>
 
-<script src="app.js?v=9dc22058eddd"></script>
+<script src="app.js?v=40de63c86069"></script>
 </body>
 </html>

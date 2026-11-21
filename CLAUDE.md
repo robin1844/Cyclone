@@ -10,7 +10,7 @@ Keep this project dependency-free and suitable for GitHub Pages and the WebBLE i
 - If Cyclone loses GATT during an active workout, keep the session and audio running, leave Stop available, and retry the same device automatically. Reconnection resumes bike data in the existing session and must never restart the selected audio.
 - The persistent shell owns the only native bike connection and FTMS subscription. Section switches and Back must not navigate the document or disconnect the bike. On app entry, silently reconnect a previously authorised bike when supported; Connect remains the fallback. All sections become ready only after FTMS notifications are active.
 - Share the Bluetooth connection through `src/shell.js` and share distance through the origin-wide `cyclone-typhoon-distances-v1` ledger.
-- Keep Typhoon performance/PB history in `typhoon-sessions-v1`.
+- Keep Typhoon completed performance/PB history in `typhoon-sessions-v1`. New early stops retain shared distance and detailed measurements without entering its PB history.
 - Typhoon's seventeen-track library follows descending BPM order from 97 to 90.
 - Keep Typhoon tracks near -13 LUFS and free of leading or trailing silent runs of 80 milliseconds or more; preserve internal pauses and a small click-safe edge margin.
 - Preserve one-time migration from legacy `cyclone-sessions` and completed `typhoon-sessions-v1` records.
@@ -23,3 +23,6 @@ Keep this project dependency-free and suitable for GitHub Pages and the WebBLE i
 - Mistral preserves Cyclone workout, audio and reconnect behaviour, with a distance picker and automatic stopping at the selected target. Store Mistral distances in the shared ledger in kilometres with source `mistral`; convert display values to the selected unit. Keep cadence polite and distance milestones assertive.
 
 - Back must end active capture, cancel pending countdown/media start, pause all outgoing audio and refresh shared totals on entering another section. Clear outgoing Media Session controls and register Typhoon Next only while Typhoon is open. Keep legacy section URLs as redirects into root hash routes.
+
+- More data combines all three sections for Today and All time. Preserve old distance-only records and linked Typhoon detail; never fabricate missing historical metrics. Store new summaries on shared ledger entries, snapshot weight per ride and mark calorie estimates. Keep opening/closing the modal independent of workout capture, playback and Bluetooth.
+- Do not revive stale countdowns after a long absence. Retire abandoned capture at its last data, wait for interrupted audio to resume before scheduling tones, and reject implausible raw distance jumps or gap/reset deltas.

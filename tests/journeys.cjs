@@ -9,7 +9,7 @@ async function installBike(page, remembered = false, realMedia = false) {
     Object.defineProperty(navigator, 'wakeLock', {value:{request:async()=>({release:async()=>{}})}});
     const calls = window.bikeCalls = { chooser: 0, connect: 0, notifications: 0, disconnect: 0, samples: 0 };
     const characteristic = new EventTarget();
-    characteristic.startNotifications = async () => { calls.notifications++; return characteristic; };
+    characteristic.startNotifications = async () => { if (window.notificationDelayMs) await new Promise(resolve => setTimeout(resolve, window.notificationDelayMs)); calls.notifications++; return characteristic; };
     const bike = new EventTarget();
     bike.name = 'Sport01 Test';
     bike.gatt = {
@@ -22,7 +22,7 @@ async function installBike(page, remembered = false, realMedia = false) {
       requestDevice: async () => { calls.chooser++; return bike; },
       getDevices: async () => remembered ? [bike] : []
     } });
-    window.sendBikeData = (metres, cadence = 90, speed = 20, power = 150) => {
+    window.sendRawBikeData = (metres, cadence = 90, speed = 20, power = 150) => {
       const buffer = new ArrayBuffer(11), view = new DataView(buffer);
       view.setUint16(0, 4 | 16 | 64, true);
       view.setUint16(2, speed * 100, true);
@@ -34,6 +34,14 @@ async function installBike(page, remembered = false, realMedia = false) {
       characteristic.value = view;
       calls.samples++;
       characteristic.dispatchEvent(new Event('characteristicvaluechanged'));
+    };
+    let lastReported = null;
+    window.sendBikeData = (metres, cadence=90, speed=20, power=150) => {
+      if (lastReported !== null && metres > lastReported) {
+        for (let value=lastReported+50;value<metres;value+=50) window.sendRawBikeData(value,cadence,speed,power);
+      }
+      window.sendRawBikeData(metres,cadence,speed,power);
+      lastReported = metres;
     };
     window.dropBike = () => bike.gatt.disconnect();
     if (realMedia) return;
