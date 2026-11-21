@@ -1,7 +1,7 @@
 const MoreData = (() => {
   const $ = id => document.getElementById(id);
   const dialog = $('more-data-dialog');
-  let period = 'today', unit = 'km', timer = null, returnFocus = null;
+  let period = 'today', unit = 'km', timer = null, returnFocus = null, workoutRoot = null, previousTitle = '', savedScroll = 0, pushedRoute = false;
   const dateKey = date => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
   function time(seconds) {
     const total = Math.round(seconds);
@@ -59,9 +59,8 @@ const MoreData = (() => {
         ['Average Watts per kilo', kgSeconds > 0 ? `${(kgIntegral / kgSeconds).toFixed(2)} W/kg` : 'Not recorded'],
         ['Peak Watts per kilo', kgPeak !== null ? `${kgPeak.toFixed(2)} W/kg` : 'Not recorded']
       ]],
-      ['Cadence and body measurements', [
+      ['Cadence and resistance', [
         ['Average cadence', average('cadenceRpm', 'RPM')], ['Peak cadence', peak('cadenceRpm', 'RPM')],
-        ['Average heart rate', average('heartRate', 'bpm')], ['Peak heart rate', peak('heartRate', 'bpm')],
         ['Average resistance level', average('resistance', '')], ['Peak resistance level', peak('resistance', '')],
         ['Average metabolic equivalent', average('met', 'MET')]
       ]]
@@ -72,16 +71,17 @@ const MoreData = (() => {
       let list = content.querySelector(`[data-group="${groupIndex}"]`);
       if (!list) {
         const heading = document.createElement('h3'); heading.textContent = title; content.append(heading);
-        list = document.createElement('dl'); list.dataset.group = groupIndex; content.append(list);
+        list = document.createElement('div'); list.dataset.group = groupIndex; content.append(list);
         for (let i = 0; i < rows.length; i++) {
-          const row = document.createElement('div'); row.className = 'data-row';
-          row.append(document.createElement('dt'), document.createElement('dd')); list.append(row);
+          const row = document.createElement('p'); row.className = 'data-row';
+          list.append(row);
         }
       }
       rows.forEach(([label, value], index) => {
         const row = list.children[index];
-        if (row.children[0].textContent !== label) row.children[0].textContent = label;
-        if (row.children[1].textContent !== value) row.children[1].textContent = value;
+        row.dataset.label = label;
+        const text = `${label}: ${value}`;
+        if (row.textContent !== text) row.textContent = text;
       });
     }
     const missing = entries.length - detailed.length;
@@ -89,30 +89,63 @@ const MoreData = (() => {
   }
   function select(value) {
     period = value;
-    $('data-today').setAttribute('aria-pressed', String(value === 'today'));
-    $('data-all-time').setAttribute('aria-pressed', String(value === 'all'));
+    $('data-today').classList.toggle('selected', value === 'today');
+    $('data-all-time').classList.toggle('selected', value === 'all');
+    $('data-today').textContent = value === 'today' ? 'Today (selected)' : 'Today';
+    $('data-all-time').textContent = value === 'all' ? 'All time (selected)' : 'All time';
     render();
   }
-  function open(selectedUnit = 'km', opener = document.activeElement) {
+  function open(selectedUnit = 'km', opener = document.activeElement, updateHistory = true) {
+    if (!dialog.hidden) return;
     returnFocus = opener;
+    workoutRoot = document.getElementById(`${activeSection}-section`);
+    previousTitle = document.title;
+    savedScroll = window.scrollY;
+    pushedRoute = updateHistory;
     unit = selectedUnit;
+    $('data-unit-btn').textContent = unit === 'miles' ? 'Switch to KM' : 'Switch to miles';
     $('data-weight').value = String(WorkoutData.weight());
     $('data-weight-status').textContent = '';
     select('today');
-    dialog.showModal();
-    $('data-today').focus();
+    if (workoutRoot) workoutRoot.hidden = true;
+    dialog.hidden = false;
+    document.title = 'More data';
+    if (updateHistory) history.pushState(null, '', `#${activeSection}/data`);
+    $('close-more-data').focus();
+    window.scrollTo(0, 0);
     clearInterval(timer); timer = setInterval(render, 1000);
+  }
+  function close(updateHistory = true) {
+    if (dialog.hidden) return;
+    if (updateHistory && pushedRoute) { history.back(); return; }
+    dialog.hidden = true;
+    if (workoutRoot) workoutRoot.hidden = false;
+    clearInterval(timer); timer = null;
+    document.title = previousTitle;
+    if (updateHistory) history.replaceState(null, '', `#${activeSection}`);
+    window.scrollTo(0, savedScroll);
+    returnFocus?.focus();
   }
   $('data-today').addEventListener('click', () => select('today'));
   $('data-all-time').addEventListener('click', () => select('all'));
-  $('close-more-data').addEventListener('click', () => dialog.close());
-  dialog.addEventListener('close', () => { clearInterval(timer); timer = null; returnFocus?.focus(); });
-  $('data-weight-form').addEventListener('submit', event => {
-    event.preventDefault();
+  $('data-unit-btn').addEventListener('click', () => {
+    DistanceUnits.toggle(activeSection);
+    unit = DistanceUnits.get(activeSection);
+    $('data-unit-btn').textContent = unit === 'miles' ? 'Switch to KM' : 'Switch to miles';
+    render();
+  });
+  $('close-more-data').addEventListener('click', () => close());
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !dialog.hidden) { event.preventDefault(); close(); }
+  });
+  function saveWeight() {
+    if (!$('data-weight').reportValidity()) return;
     const weight = Number($('data-weight').value);
     if (!Number.isFinite(weight) || weight < 30 || weight > 250) return;
     localStorage.setItem('typhoon-weight-kg', String(weight));
     $('data-weight-status').textContent = `Weight saved: ${weight} kg. It will be used for future rides.`;
-  });
-  return { open, close: () => { if (dialog.open) dialog.close(); } };
+  }
+  $('save-data-weight').addEventListener('click', saveWeight);
+  $('data-weight').addEventListener('keydown', event => { if (event.key === 'Enter') saveWeight(); });
+  return { open, close };
 })();

@@ -24,5 +24,8 @@ Keep this project dependency-free and suitable for GitHub Pages and the WebBLE i
 
 - Back must end active capture, cancel pending countdown/media start, pause all outgoing audio and refresh shared totals on entering another section. Clear outgoing Media Session controls and register Typhoon Next only while Typhoon is open. Keep legacy section URLs as redirects into root hash routes.
 
-- More data combines all three sections for Today and All time. Preserve old distance-only records and linked Typhoon detail; never fabricate missing historical metrics. Store new summaries on shared ledger entries, snapshot weight per ride and mark calorie estimates. Keep opening/closing the modal independent of workout capture, playback and Bluetooth.
+- More data combines all three sections for Today and All time. Preserve old distance-only records and linked Typhoon detail; never fabricate missing historical metrics. Store new summaries on shared ledger entries, snapshot weight per ride and mark calorie estimates. Keep opening/closing the data screen independent of workout capture, playback and Bluetooth.
 - Do not revive stale countdowns after a long absence. Retire abandoned capture at its last data, wait for interrupted audio to resume before scheduling tones, and reject implausible raw distance jumps or gap/reset deltas.
+
+- More data is a plain screen, without ARIA landmark/group/dialog/definition-list clutter. Keep automatic workout announcements in the global visually hidden host; do not hide or suppress them when showing data. Each displayed stat is one text node containing its label, colon and value.
+- Remember units per section and expose a bottom units button on every Connect/Start/Stop screen and More data. Unit changes must preserve the physical Mistral target. Hide More data on pickers, countdown and Typhoon results. Do not collect/display heart-rate data; skip its packet byte and remove only previously stored heart-rate fields.

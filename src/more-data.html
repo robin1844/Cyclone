@@ -1,36 +1,33 @@
 <style>
 .more-data-button { width:100%; min-height:3.5rem; margin-top:1.2rem; padding:.75rem; border:1.5px solid #9ca3af; border-radius:.65rem; background:transparent; color:inherit; font:700 1rem system-ui; cursor:pointer; }
-#more-data-dialog { box-sizing:border-box; width:calc(100% - 1.5rem); max-width:36rem; max-height:90vh; border:1px solid #9ca3af; border-radius:.8rem; padding:1.25rem; background:#f4f6f9; color:#111827; font:1rem/1.6 system-ui; }
-#more-data-dialog::backdrop { background:rgba(0,0,0,.65); }
+#more-data-dialog { box-sizing:border-box; width:100%; max-width:36rem; min-height:100vh; margin:0 auto; padding:1.25rem; background:#f4f6f9; color:#111827; font:1rem/1.6 system-ui; }
 #more-data-dialog button { min-height:3rem; padding:.5rem 1rem; border:1px solid #9ca3af; border-radius:.5rem; font:inherit; background:transparent; color:inherit; cursor:pointer; }
-#more-data-dialog [aria-pressed="true"] { background:#1d4ed8; color:white; }
+#more-data-dialog .selected { background:#1d4ed8; color:white; }
 #more-data-dialog .data-tabs { display:grid; grid-template-columns:1fr 1fr; gap:.75rem; margin:1rem 0; }
 #more-data-dialog h2 { margin:.75rem 0; }
 #more-data-dialog h3 { margin:1.5rem 0 .5rem; }
-#more-data-dialog dl { margin:0; }
-#more-data-dialog .data-row { display:flex; justify-content:space-between; gap:1rem; padding:.7rem 0; border-bottom:1px solid #9ca3af; }
-#more-data-dialog dt { flex:1; }
-#more-data-dialog dd { margin:0; text-align:right; font-weight:700; }
+#more-data-dialog .data-row { margin:0; padding:.7rem 0; border-bottom:1px solid #9ca3af; }
 #more-data-dialog input { max-width:6rem; padding:.4rem; font:inherit; }
 #more-data-dialog :focus-visible { outline:3px solid #dc2626; outline-offset:3px; }
 @media (prefers-color-scheme:dark) { #more-data-dialog { background:#161b22; color:#e6edf3; } }
 </style>
-<dialog id="more-data-dialog" aria-labelledby="more-data-heading">
-  <button id="close-more-data" type="button">Close</button>
+<div id="more-data-dialog" hidden>
+  <button id="close-more-data" type="button">Back</button>
   <h2 id="more-data-heading">More data</h2>
-  <div class="data-tabs" role="group" aria-label="Time period">
-    <button id="data-today" type="button" aria-pressed="true">Today</button>
-    <button id="data-all-time" type="button" aria-pressed="false">All time</button>
+  <div class="data-tabs">
+    <button id="data-today" type="button" class="selected">Today (selected)</button>
+    <button id="data-all-time" type="button">All time</button>
   </div>
-  <p>Combined rides from Cyclone, Typhoon and Mistral.</p>
   <div id="more-data-content"></div>
+  <button id="data-unit-btn" type="button">Switch to miles</button>
+  <p>Combined rides from Cyclone, Typhoon and Mistral.</p>
   <p id="data-coverage"></p>
   <p>“Not recorded” means the bike did not supply that measurement, or it was not saved for older rides. Calories calculated from power are estimates.</p>
-  <form id="data-weight-form">
+  <div id="data-weight-form">
     <label for="data-weight">Body weight for future rides (kg)</label>
     <input id="data-weight" type="number" min="30" max="250" step="0.1" required />
-    <button type="submit">Save weight</button>
+    <button id="save-data-weight" type="button">Save weight</button>
     <p>Watts per kilo uses the body weight saved when each ride started. The default is 75 kg.</p>
-    <p id="data-weight-status" role="status"></p>
-  </form>
-</dialog>
+    <p id="data-weight-status"></p>
+  </div>
+</div>

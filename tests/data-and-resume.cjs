@@ -33,7 +33,7 @@ async function main() {
     });
     for (const value of decoded) {
       assert.equal(value.powerW, 200); assert.equal(value.energyKcal, 100);
-      assert.equal(value.heartRate, 120); assert.equal(value.met, 7.5);
+      assert.equal(value.heartRate, undefined); assert.equal(value.met, 7.5);
       assert.equal(value.resistance, 7); assert.equal(value.bikeRemainingSeconds, 200);
     }
     assert.equal(await page.evaluate(() => BikeData.distanceDelta(100, 10000, 1, 20)), 0);
@@ -69,9 +69,11 @@ async function main() {
     }, metrics);
     await page.locator('#open-cyclone').click();
     await page.locator('#cyclone-more-data-btn').click();
-    assert.equal(await page.locator('#data-today').getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.locator('#data-today').getAttribute('class'), 'selected');
     async function row(label) {
-      return page.locator('#more-data-content .data-row').filter({ has: page.locator('dt', { hasText: label }) }).first().locator('dd').textContent();
+      const name = label.source.replace(/^\^|\$$/g, '');
+      const text = await page.locator('#more-data-content .data-row').filter({hasText:new RegExp('^'+name+': ')}).first().textContent();
+      return text.slice(name.length + 2);
     }
     assert.equal(await row(/^Distance$/), '30.00 km');
     assert.equal(await row(/^Total time$/), '1:30:00');
@@ -86,6 +88,7 @@ async function main() {
     assert.equal(await page.evaluate(() => WorkoutData.weight()), 80);
     assert.equal(await row(/^Average Watts per kilo$/), '2.67 W/kg');
     await page.keyboard.press('Escape');
+    await page.waitForFunction(() => document.getElementById('more-data-dialog').hidden);
     assert.equal(await page.locator('#more-data-dialog').isVisible(), false);
     assert.equal(await page.evaluate(() => document.activeElement.id), 'cyclone-more-data-btn');
     await page.locator('#cyclone-home-btn').click();
@@ -100,8 +103,9 @@ async function main() {
 
     await page.locator('#mistral-home-btn').click();
     await page.locator('#open-typhoon').click();
+    await page.locator('#typhoon-section [data-minutes="3"]').click();
     await page.locator('#typhoon-more-data-btn').click();
-    assert.equal(await page.locator('#data-today').getAttribute('aria-pressed'),'true');
+    assert.equal(await page.locator('#data-today').getAttribute('class'),'selected');
     assert.equal(await row(/^Distance$/),'30.00 km');
     await page.locator('#close-more-data').click();
     await page.locator('#typhoon-home-btn').click();

@@ -58,12 +58,12 @@ async function main() {
     await atElapsed(600);
     await page.evaluate(() => sendBikeData(5000));
     assert.equal(await page.locator('#mistral-results-section').isVisible(), true);
-    assert.equal(await page.locator('#mistral-result-time').textContent(), '10:00');
-    assert.equal(await page.locator('#mistral-result-speed').textContent(), '30.0 km/h');
+    assert.equal((await page.locator('#mistral-result-time').textContent()).replace("Time: ", ""), '10:00');
+    assert.equal((await page.locator('#mistral-result-speed').textContent()).replace("Average speed: ", ""), '30.0 km/h');
     assert.equal(await page.evaluate(() => document.activeElement.id), 'mistral-results-heading');
     await page.clock.runFor(1300);
     assert.equal(await speech(), 'Workout complete. Time: 10 minutes. Average speed: 30.0 kilometres per hour.');
-    assert.equal(await page.locator('#mistral-stat-alltime').textContent(), '5.00 km');
+    assert.equal((await page.locator('#mistral-stat-alltime').textContent()).replace("All time: ", ""), '5.00 km');
     await page.screenshot({ path: process.env.TEMP + '/mistral-results-km.png', fullPage: true });
 
     // A second workout resets both summary and threshold state.
@@ -73,8 +73,8 @@ async function main() {
     assert.equal(await speech(), '200 metres to go.');
     await atElapsed(1200);
     await page.evaluate(() => document.getElementById('mistral-main-btn').click());
-    assert.equal(await page.locator('#mistral-result-time').textContent(), '20:00');
-    assert.equal(await page.locator('#mistral-result-speed').textContent(), '14.4 km/h');
+    assert.equal((await page.locator('#mistral-result-time').textContent()).replace("Time: ", ""), '20:00');
+    assert.equal((await page.locator('#mistral-result-speed').textContent()).replace("Average speed: ", ""), '14.4 km/h');
     await page.clock.runFor(1300);
     assert.match(await speech(), /^Workout stopped\. Time: 20 minutes\./);
 
@@ -91,8 +91,8 @@ async function main() {
     }
     await atElapsed(1800);
     await page.evaluate(() => sendBikeData(8047));
-    assert.equal(await page.locator('#mistral-result-time').textContent(), '30:00');
-    assert.equal(await page.locator('#mistral-result-speed').textContent(), '10.0 mph');
+    assert.equal((await page.locator('#mistral-result-time').textContent()).replace("Time: ", ""), '30:00');
+    assert.equal((await page.locator('#mistral-result-speed').textContent()).replace("Average speed: ", ""), '10.0 mph');
     await page.clock.runFor(1300);
     assert.equal(await speech(), 'Workout complete. Time: 30 minutes. Average speed: 10.0 miles per hour.');
 
@@ -100,15 +100,15 @@ async function main() {
     await start();
     await atElapsed(3661);
     await page.evaluate(() => { sendBikeData(1609); document.getElementById('mistral-main-btn').click(); });
-    assert.match(await page.locator('#mistral-result-time').textContent(), /^1:01:0[1-3]$/);
+    assert.match((await page.locator('#mistral-result-time').textContent()).replace("Time: ", ""), /^1:01:0[1-3]$/);
     await page.clock.runFor(1300);
     assert.match(await speech(), /Time: 1 hour, 1 minute, [1-3] seconds?/);
     await page.evaluate(() => {
       document.getElementById('mistral-main-btn').click();
       document.getElementById('mistral-main-btn').click();
     });
-    assert.equal(await page.locator('#mistral-result-time').textContent(), '0:00');
-    assert.equal(await page.locator('#mistral-result-speed').textContent(), '0.0 mph');
+    assert.equal((await page.locator('#mistral-result-time').textContent()).replace("Time: ", ""), '0:00');
+    assert.equal((await page.locator('#mistral-result-speed').textContent()).replace("Average speed: ", ""), '0.0 mph');
     await start();
     await page.locator('#mistral-home-btn').click();
     await page.clock.runFor(6000);

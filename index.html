@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light dark" />
 <title>Cyclone</title>
-<link rel="stylesheet" href="app.css?v=40de63c86069" />
+<link rel="stylesheet" href="app.css?v=8007fc8c7fa7" />
 </head>
 <body>
 <div id="launcher">
@@ -13,25 +13,26 @@
   <button type="button" id="open-typhoon" data-section="typhoon">Typhoon</button>
   <button type="button" id="open-mistral" data-section="mistral">Mistral</button>
 </div>
-<dialog id="more-data-dialog" aria-labelledby="more-data-heading">
-  <button id="close-more-data" type="button">Close</button>
+<div id="more-data-dialog" hidden>
+  <button id="close-more-data" type="button">Back</button>
   <h2 id="more-data-heading">More data</h2>
-  <div class="data-tabs" role="group" aria-label="Time period">
-    <button id="data-today" type="button" aria-pressed="true">Today</button>
-    <button id="data-all-time" type="button" aria-pressed="false">All time</button>
+  <div class="data-tabs">
+    <button id="data-today" type="button" class="selected">Today (selected)</button>
+    <button id="data-all-time" type="button">All time</button>
   </div>
-  <p>Combined rides from Cyclone, Typhoon and Mistral.</p>
   <div id="more-data-content"></div>
+  <button id="data-unit-btn" type="button">Switch to miles</button>
+  <p>Combined rides from Cyclone, Typhoon and Mistral.</p>
   <p id="data-coverage"></p>
   <p>“Not recorded” means the bike did not supply that measurement, or it was not saved for older rides. Calories calculated from power are estimates.</p>
-  <form id="data-weight-form">
+  <div id="data-weight-form">
     <label for="data-weight">Body weight for future rides (kg)</label>
     <input id="data-weight" type="number" min="30" max="250" step="0.1" required />
-    <button type="submit">Save weight</button>
+    <button id="save-data-weight" type="button">Save weight</button>
     <p>Watts per kilo uses the body weight saved when each ride started. The default is 75 kg.</p>
-    <p id="data-weight-status" role="status"></p>
-  </form>
-</dialog>
+    <p id="data-weight-status"></p>
+  </div>
+</div>
 
 <div id="cyclone-section" class="workout-section" hidden>
 <div id="cyclone-page-header">
@@ -53,38 +54,26 @@
   </div>
 
   <div id="cyclone-rpm-display" hidden>
-    <div id="cyclone-rpm-label">Cadence (RPM)</div>
-    <div id="cyclone-rpm-value">0</div>
+    <p id="cyclone-rpm-value">Cadence: 0 RPM</p>
   </div>
 
   <div id="cyclone-stats">
-    <div class="stat-row">
-      <span class="stat-label">Today</span>
-      <span class="stat-value" id="cyclone-stat-today">0.00 km</span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">Last 7 days</span>
-      <span class="stat-value" id="cyclone-stat-week">0.00 km</span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">Last 30 days</span>
-      <span class="stat-value" id="cyclone-stat-month">0.00 km</span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">All time</span>
-      <span class="stat-value" id="cyclone-stat-alltime">0.00 km</span>
-    </div>
+    <p class="stat-row" id="cyclone-stat-today">Today: 0.00 km</p>
+    <p class="stat-row" id="cyclone-stat-week">Last 7 days: 0.00 km</p>
+    <p class="stat-row" id="cyclone-stat-month">Last 30 days: 0.00 km</p>
+    <p class="stat-row" id="cyclone-stat-alltime">All time: 0.00 km</p>
   </div>
 
   <button id="cyclone-reset-btn">Reset all distance data</button>
   <button id="cyclone-more-data-btn" class="more-data-button" type="button">More data</button>
+  <button id="cyclone-workout-unit-btn" class="more-data-button" type="button">Switch to miles</button>
 </div>
 
-<p id="cyclone-spoken" class="vh" aria-live="assertive" aria-atomic="true"></p>
+
 </div>
 
 <div id="typhoon-section" class="workout-section" hidden>
-<div id="typhoon-spoken" class="vh" aria-live="assertive" aria-atomic="true"></div>
+
 <audio id="typhoon-music" preload="auto"></audio>
 <audio id="typhoon-music-preload" preload="auto"></audio>
 
@@ -96,7 +85,7 @@
 </div>
 
 <div id="typhoon-page-main">
-  <section id="typhoon-setup-section">
+  <div id="typhoon-setup-section">
     <div id="typhoon-duration-grid" class="duration-grid">
       <button class="duration-choice" type="button" data-minutes="3">3 minutes</button>
       <button class="duration-choice" type="button" data-minutes="5">5 minutes</button>
@@ -104,40 +93,40 @@
       <button class="duration-choice" type="button" data-minutes="10">10 minutes</button>
     </div>
     <p id="typhoon-unsupported" class="vh" hidden>This browser does not provide Web Bluetooth.</p>
-  </section>
+  </div>
 
   <button id="typhoon-main-action" type="button" hidden>Connect</button>
 
-  <section id="typhoon-countdown-section" hidden>
+  <div id="typhoon-countdown-section" hidden>
     <div id="typhoon-countdown" aria-hidden="true">3</div>
-  </section>
+  </div>
 
-  <section id="typhoon-workout-section" hidden>
+  <div id="typhoon-workout-section" hidden>
     <div id="typhoon-workout-clock" aria-label="Time remaining">0:00</div>
     <div id="typhoon-countdown-message" aria-hidden="true" hidden></div>
     <div id="typhoon-cadence-display">
-      <div id="typhoon-cadence-label">Cadence (RPM)</div>
-      <div id="typhoon-live-cadence-value">0</div>
+      <p id="typhoon-live-cadence-value">Cadence: 0 RPM</p>
     </div>
     <div class="workout-actions">
       <button id="typhoon-next-song" type="button">Next song</button>
     </div>
-  </section>
+  </div>
 
-  <section id="typhoon-results-section" hidden>
+  <div id="typhoon-results-section" hidden>
     <h2 id="typhoon-results-heading" tabindex="-1">Workout results</h2>
     <ul id="typhoon-comparison-list" class="comparison-list"></ul>
-  </section>
+  </div>
 
-  <section id="typhoon-distance-section" hidden>
+  <div id="typhoon-distance-section" hidden>
     <h2 id="typhoon-distance-heading">Distance</h2>
-    <div class="stat-row"><span class="stat-label">This workout</span><span class="stat-value" id="typhoon-distance-workout">0.00 kilometres</span></div>
-    <div class="stat-row"><span class="stat-label">Last 7 days</span><span class="stat-value" id="typhoon-distance-week">0.00 kilometres</span></div>
-    <div class="stat-row"><span class="stat-label">Last 30 days</span><span class="stat-value" id="typhoon-distance-month">0.00 kilometres</span></div>
-    <div class="stat-row"><span class="stat-label">All time</span><span class="stat-value" id="typhoon-distance-all">0.00 kilometres</span></div>
-  </section>
+    <p class="stat-row" id="typhoon-distance-workout">This workout: 0.00 kilometres</p>
+    <p class="stat-row" id="typhoon-distance-week">Last 7 days: 0.00 kilometres</p>
+    <p class="stat-row" id="typhoon-distance-month">Last 30 days: 0.00 kilometres</p>
+    <p class="stat-row" id="typhoon-distance-all">All time: 0.00 kilometres</p>
+  </div>
 
-  <button id="typhoon-more-data-btn" class="more-data-button" type="button">More data</button>
+  <button id="typhoon-more-data-btn" class="more-data-button" type="button" hidden>More data</button>
+  <button id="typhoon-workout-unit-btn" class="more-data-button" type="button" hidden>Switch to miles</button>
 
   <div id="typhoon-post-workout-actions" hidden>
     <button id="typhoon-another-workout" type="button">Another workout</button>
@@ -189,45 +178,33 @@
   <p id="mistral-distance-progress"></p>
 
   <div id="mistral-rpm-display" hidden>
-    <div id="mistral-rpm-label">Cadence (RPM)</div>
-    <div id="mistral-rpm-value">0</div>
+    <p id="mistral-rpm-value">Cadence: 0 RPM</p>
   </div>
 
-  <section id="mistral-results-section" aria-labelledby="mistral-results-heading" hidden>
+  <div id="mistral-results-section" hidden>
     <h2 id="mistral-results-heading" tabindex="-1">Workout results</h2>
-    <div class="stat-row"><span class="stat-label">Time</span><span class="stat-value" id="mistral-result-time"></span></div>
-    <div class="stat-row"><span class="stat-label">Average speed</span><span class="stat-value" id="mistral-result-speed"></span></div>
-  </section>
+    <p class="stat-row" id="mistral-result-time">Time: </p>
+    <p class="stat-row" id="mistral-result-speed">Average speed: </p>
+  </div>
 
   <div id="mistral-stats">
-    <div class="stat-row">
-      <span class="stat-label">Today</span>
-      <span class="stat-value" id="mistral-stat-today">0.00 km</span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">Last 7 days</span>
-      <span class="stat-value" id="mistral-stat-week">0.00 km</span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">Last 30 days</span>
-      <span class="stat-value" id="mistral-stat-month">0.00 km</span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">All time</span>
-      <span class="stat-value" id="mistral-stat-alltime">0.00 km</span>
-    </div>
+    <p class="stat-row" id="mistral-stat-today">Today: 0.00 km</p>
+    <p class="stat-row" id="mistral-stat-week">Last 7 days: 0.00 km</p>
+    <p class="stat-row" id="mistral-stat-month">Last 30 days: 0.00 km</p>
+    <p class="stat-row" id="mistral-stat-alltime">All time: 0.00 km</p>
   </div>
 
   <button id="mistral-reset-btn">Reset all distance data</button>
   <button id="mistral-change-distance-btn" type="button">Choose distance</button>
   <button id="mistral-more-data-btn" class="more-data-button" type="button">More data</button>
+  <button id="mistral-workout-unit-btn" class="more-data-button" type="button">Switch to KM</button>
   </div>
 </div>
 
-<p id="mistral-cadence-spoken" class="vh" aria-live="polite" aria-atomic="true"></p>
-<p id="mistral-spoken" class="vh" aria-live="assertive" aria-atomic="true"></p>
-</div>
 
-<script src="app.js?v=40de63c86069"></script>
+
+</div>
+<div id="workout-announcements"><p id="cyclone-spoken" class="vh" aria-live="assertive" aria-atomic="true"></p><div id="typhoon-spoken" class="vh" aria-live="assertive" aria-atomic="true"></div><p id="mistral-cadence-spoken" class="vh" aria-live="polite" aria-atomic="true"></p><p id="mistral-spoken" class="vh" aria-live="assertive" aria-atomic="true"></p></div>
+<script src="app.js?v=8007fc8c7fa7"></script>
 </body>
 </html>

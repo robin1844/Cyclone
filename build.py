@@ -44,14 +44,15 @@ def build():
     css = re.search(r"<style>(.*?)</style>", launcher, re.S)[1]
     # Launcher rules must not leak into the embedded workout sections.
     css = css.replace("  button", "  #launcher button")
-    css += "\n[hidden] { display: none !important; }\n.workout-section { min-height: 100vh; }\n"
+    css += "\n[hidden] { display: none !important; }\n.workout-section { min-height: 100vh; }\n#workout-announcements { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }\n"
     markup = re.search(r'<div id="launcher">.*?</div>', launcher, re.S)[0]
     for name in ("cyclone", "typhoon", "mistral"):
         markup = markup.replace(f'onclick="location.href=\'{name}/\'"', f'id="open-{name}" data-section="{name}"')
     more = (SRC / "more-data.html").read_text(encoding="utf-8")
     css += "\n" + re.search(r"<style>(.*?)</style>", more, re.S)[1]
     markup += re.sub(r"<style>.*?</style>", "", more, flags=re.S)
-    scripts = [(SRC / name).read_text(encoding="utf-8") for name in ("workout-data.js", "shell.js", "more-data.js")]
+    scripts = [(SRC / name).read_text(encoding="utf-8") for name in ("units.js", "workout-data.js", "shell.js", "more-data.js")]
+    announcements = []
     for name in ("cyclone", "typhoon", "mistral"):
         source = (SRC / f"{name}.html").read_text(encoding="utf-8")
         css += "\n" + scope_css(re.search(r"<style>(.*?)</style>", source, re.S)[1], name)
@@ -60,12 +61,16 @@ def build():
         body = re.sub(r'\bid="([^"]+)"', rf'id="{name}-\1"', body)
         for attribute in ("for", "aria-labelledby", "aria-describedby", "aria-controls"):
             body = re.sub(rf'{attribute}="([^"]+)"', lambda m: f'{attribute}="' + " ".join(f"{name}-{x}" if x in ids else x for x in m[1].split()) + '"', body)
+        live = re.compile(r'<(p|div)\b[^>]*aria-live="[^"]+"[^>]*>.*?</\1>', re.S)
+        announcements.extend(match[0] for match in live.finditer(body))
+        body = live.sub("", body)
         markup += f'\n<div id="{name}-section" class="workout-section" hidden>\n{body}\n</div>\n'
         script = re.search(r"<script>(.*?)</script>", source, re.S)[1]
         if name == "typhoon":
             script = script.replace('file: "audio/', 'file: "typhoon/audio/')
         script = re.sub(r'^\s*"use strict";', "", script)
         scripts.append(f'\n// {name.title()} workout engine\n(() => {{\nconst document = sectionDocument("{name}");\n{script}\n}})();')
+    markup += '<div id="workout-announcements">' + "".join(announcements) + '</div>'
     scripts.append('''
 document.querySelectorAll("[data-section]").forEach(button => {
   button.addEventListener("click", () => showSection(button.dataset.section));

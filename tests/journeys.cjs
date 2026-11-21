@@ -96,14 +96,14 @@ async function main() {
     await page.clock.runFor(4500);
     await page.evaluate(() => { sendBikeData(1000); sendBikeData(2000); });
     await page.locator('#cyclone-main-btn').click();
-    assert.equal(await page.locator('#cyclone-stat-today').textContent(), '1.00 km');
+    assert.equal((await page.locator('#cyclone-stat-today').textContent()).replace("Today: ", ""), '1.00 km');
     await page.locator('#cyclone-home-btn').click();
     await page.waitForFunction(() => !document.getElementById('launcher').hidden);
     await page.locator('#open-mistral').click();
     await page.locator('#mistral-unit-btn').click();
     await page.locator('#mistral-section [data-distance="5"]').click();
     assert.equal(await page.locator('#mistral-main-btn').textContent(), 'Start');
-    assert.equal(await page.locator('#mistral-stat-today').textContent(), '1.00 km');
+    assert.equal((await page.locator('#mistral-stat-today').textContent()).replace("Today: ", ""), '1.00 km');
     await page.locator('#mistral-audio-file').setInputFiles({ name: 'ride.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('test media') });
     await page.locator('#mistral-main-btn').click();
     await page.clock.runFor(4500);
@@ -113,7 +113,7 @@ async function main() {
     assert.equal(await page.locator('#mistral-spoken').textContent(), '0.5K down, 4.5 to go.');
     await page.evaluate(() => sendBikeData(7000));
     assert.equal(await page.locator('#mistral-main-btn').textContent(), 'Start');
-    assert.equal(await page.locator('#mistral-stat-today').textContent(), '6.00 km');
+    assert.equal((await page.locator('#mistral-stat-today').textContent()).replace("Today: ", ""), '6.00 km');
     assert.equal(await page.evaluate(() => document.getElementById('mistral-workout-audio').paused), true);
     await page.locator('#mistral-home-btn').click();
     await page.locator('#open-typhoon').click();
@@ -149,7 +149,7 @@ async function main() {
     await page.locator('#typhoon-home-btn').click();
     assert.equal(await page.evaluate(() => window.mediaActions.nexttrack),null);
     await page.locator('#open-cyclone').click();
-    assert.equal(await page.locator('#cyclone-stat-today').textContent(), '7.00 km');
+    assert.equal((await page.locator('#cyclone-stat-today').textContent()).replace("Today: ", ""), '7.00 km');
     const calls = await page.evaluate(() => bikeCalls);
     assert.equal(calls.chooser, 1);
     assert.equal(calls.connect, 1);
@@ -188,7 +188,7 @@ async function main() {
     await page.locator('#cyclone-home-btn').click();
     await page.locator('#open-mistral').click();
     await page.locator('#mistral-section [data-distance="5"]').click();
-    assert.equal(await page.locator('#mistral-stat-alltime').textContent(), '0.00 km');
+    assert.equal((await page.locator('#mistral-stat-alltime').textContent()).replace("All time: ", ""), '0.00 km');
     console.log('PASS: Back during countdown, no hidden playback, picker reset, reconnect during a ride without another chooser, no distance jump, shared reset.');
     assert.deepEqual(errors, []);
     await page.goBack();
@@ -225,12 +225,12 @@ async function main() {
     await migrationPage.clock.install();
     await migrationPage.goto(base);
     await migrationPage.locator('#open-cyclone').click();
-    assert.equal(await migrationPage.locator('#cyclone-stat-alltime').textContent(),'5.00 km');
+    assert.equal((await migrationPage.locator('#cyclone-stat-alltime').textContent()).replace("All time: ", ""),'5.00 km');
     await migrationPage.locator('#cyclone-home-btn').click();
     await migrationPage.locator('#open-mistral').click();
     await migrationPage.locator('#mistral-unit-btn').click();
     await migrationPage.locator('#mistral-section [data-distance="5"]').click();
-    assert.equal(await migrationPage.locator('#mistral-stat-alltime').textContent(),'5.00 km');
+    assert.equal((await migrationPage.locator('#mistral-stat-alltime').textContent()).replace("All time: ", ""),'5.00 km');
     assert.equal(await migrationPage.evaluate(() => JSON.parse(localStorage.getItem('cyclone-typhoon-distances-v1')).length),2);
     await migrationPage.locator('#mistral-home-btn').click();
     await migrationPage.locator('#open-typhoon').click();
@@ -245,10 +245,10 @@ async function main() {
     assert.equal(await migrationPage.evaluate(() => localStorage.getItem('typhoon-sessions-v1')),null);
     await migrationPage.locator('#typhoon-home-btn').click();
     await migrationPage.locator('#open-cyclone').click();
-    assert.equal(await migrationPage.locator('#cyclone-stat-alltime').textContent(),'0.00 km');
+    assert.equal((await migrationPage.locator('#cyclone-stat-alltime').textContent()).replace("All time: ", ""),'0.00 km');
     await migrationPage.reload();
     await migrationPage.waitForFunction(() => document.getElementById('cyclone-section')?.hidden === false);
-    assert.equal(await migrationPage.locator('#cyclone-stat-alltime').textContent(),'0.00 km');
+    assert.equal((await migrationPage.locator('#cyclone-stat-alltime').textContent()).replace("All time: ", ""),'0.00 km');
     console.log('PASS: legacy histories imported once, incomplete Typhoon history excluded, Typhoon reset clears both histories without reimport on reload.');
     await migrationContext.close();
     // Windows Playwright WebKit has no Web Audio implementation. Test journeys

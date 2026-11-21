@@ -111,11 +111,16 @@ function sectionDocument(name) {
 }
 
 let navigation = Promise.resolve();
-function showSection(name, updateHistory = true) {
+function showSection(route, updateHistory = true) {
+  let [name, view] = String(route || "").split("/");
   navigation = navigation.then(async () => {
     if (!Object.hasOwn(sections, name)) name = null;
-    if (name === activeSection) return;
-    MoreData.close();
+    if (name === activeSection) {
+      if (name && view === "data") MoreData.open(DistanceUnits.get(name), document.getElementById(`${name}-more-data-btn`), false);
+      else MoreData.close(false);
+      return;
+    }
+    MoreData.close(false);
     if (activeSection) { sections[activeSection].cancelStaleStart?.(); WorkoutData.expire(sections[activeSection]); }
     const previous = activeSection;
     if (previous) await sections[previous].leave();
@@ -123,11 +128,14 @@ function showSection(name, updateHistory = true) {
     for (const key of Object.keys(sections)) document.getElementById(`${key}-section`).hidden = key !== name;
     document.getElementById("launcher").hidden = Boolean(name);
     document.title = name ? name[0].toUpperCase() + name.slice(1) : "Cyclone";
-    if (updateHistory) history.pushState(null, "", name ? `#${name}` : location.pathname + location.search);
+    if (updateHistory) history.pushState(null, "", name ? `#${name}${view === "data" ? "/data" : ""}` : location.pathname + location.search);
     if (navigator.mediaSession) {
       try { navigator.mediaSession.setActionHandler("nexttrack", null); } catch (error) {}
     }
-    if (name) sections[name].enter();
+    if (name) {
+      sections[name].enter();
+      if (view === "data") MoreData.open(DistanceUnits.get(name), document.getElementById(`${name}-more-data-btn`), false);
+    }
     else {
       document.getElementById(`open-${previous || "cyclone"}`).focus();
       document.body.style.background = "";

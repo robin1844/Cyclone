@@ -112,7 +112,7 @@
   }
   #cadence-display { text-align: center; margin: 2rem 0; }
   #cadence-label { color: var(--muted); font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; }
-  #live-cadence-value { color: var(--accent); font-size: 6rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  #live-cadence-value { color: var(--accent); font-size: clamp(2rem, 10vw, 3rem); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
   .workout-actions { display: grid; gap: 1rem; margin-top: 2rem; }
   .workout-actions button { width: 100%; }
   #next-song { color: var(--accent); }
@@ -176,7 +176,7 @@
 </div>
 
 <div id="page-main">
-  <section id="setup-section">
+  <div id="setup-section">
     <div id="duration-grid" class="duration-grid">
       <button class="duration-choice" type="button" data-minutes="3">3 minutes</button>
       <button class="duration-choice" type="button" data-minutes="5">5 minutes</button>
@@ -184,40 +184,40 @@
       <button class="duration-choice" type="button" data-minutes="10">10 minutes</button>
     </div>
     <p id="unsupported" class="vh" hidden>This browser does not provide Web Bluetooth.</p>
-  </section>
+  </div>
 
   <button id="main-action" type="button" hidden>Connect</button>
 
-  <section id="countdown-section" hidden>
+  <div id="countdown-section" hidden>
     <div id="countdown" aria-hidden="true">3</div>
-  </section>
+  </div>
 
-  <section id="workout-section" hidden>
+  <div id="workout-section" hidden>
     <div id="workout-clock" aria-label="Time remaining">0:00</div>
     <div id="countdown-message" aria-hidden="true" hidden></div>
     <div id="cadence-display">
-      <div id="cadence-label">Cadence (RPM)</div>
-      <div id="live-cadence-value">0</div>
+      <p id="live-cadence-value">Cadence: 0 RPM</p>
     </div>
     <div class="workout-actions">
       <button id="next-song" type="button">Next song</button>
     </div>
-  </section>
+  </div>
 
-  <section id="results-section" hidden>
+  <div id="results-section" hidden>
     <h2 id="results-heading" tabindex="-1">Workout results</h2>
     <ul id="comparison-list" class="comparison-list"></ul>
-  </section>
+  </div>
 
-  <section id="distance-section" hidden>
+  <div id="distance-section" hidden>
     <h2 id="distance-heading">Distance</h2>
-    <div class="stat-row"><span class="stat-label">This workout</span><span class="stat-value" id="distance-workout">0.00 kilometres</span></div>
-    <div class="stat-row"><span class="stat-label">Last 7 days</span><span class="stat-value" id="distance-week">0.00 kilometres</span></div>
-    <div class="stat-row"><span class="stat-label">Last 30 days</span><span class="stat-value" id="distance-month">0.00 kilometres</span></div>
-    <div class="stat-row"><span class="stat-label">All time</span><span class="stat-value" id="distance-all">0.00 kilometres</span></div>
-  </section>
+    <p class="stat-row" id="distance-workout">This workout: 0.00 kilometres</p>
+    <p class="stat-row" id="distance-week">Last 7 days: 0.00 kilometres</p>
+    <p class="stat-row" id="distance-month">Last 30 days: 0.00 kilometres</p>
+    <p class="stat-row" id="distance-all">All time: 0.00 kilometres</p>
+  </div>
 
-  <button id="more-data-btn" class="more-data-button" type="button">More data</button>
+  <button id="more-data-btn" class="more-data-button" type="button" hidden>More data</button>
+  <button id="workout-unit-btn" class="more-data-button" type="button" hidden>Switch to miles</button>
 
   <div id="post-workout-actions" hidden>
     <button id="another-workout" type="button">Another workout</button>
@@ -242,6 +242,7 @@ const INDOOR_BIKE_DATA = 0x2ad2;
 const SESSION_KEY = "typhoon-sessions-v1";
 const DISTANCE_KEY = "cyclone-typhoon-distances-v1";
 const DISTANCE_MIGRATION_KEY = "cyclone-typhoon-distances-migrated-v1";
+let unit = DistanceUnits.get("typhoon");
 const DEVICE_KEY = "typhoon-device-name";
 const LAST_START_KEY = "typhoon-last-start-track";
 const LAST_WORKOUT_TRACKS_KEY = "typhoon-last-workout-tracks";
@@ -289,7 +290,7 @@ let previousTimerRemaining = 0;
 let announcedTimeMilestones = new Set();
 let lastDataTime = null;
 let lastRawDistanceM = null;
-let latest = { speedKph: 0, cadenceRpm: 0, powerW: 0, heartRate: 0 };
+let latest = { speedKph: 0, cadenceRpm: 0, powerW: 0 };
 
 let workoutActive = false;
 let startingWorkout = false;
@@ -400,10 +401,12 @@ function resetCombinedDistances() {
 }
 
 function speak(text) {
+  if (activeSection !== "typhoon") return;
   if (!text) return;
   const region = $("spoken");
   region.textContent = "";
   requestAnimationFrame(() => {
+    if (activeSection !== "typhoon") return;
     region.textContent = text;
     clearTimeout(spokenTimer);
     spokenTimer = setTimeout(() => { region.textContent = ""; }, 10000);
@@ -424,6 +427,9 @@ function setSetupEnabled(enabled) {
 function updateMainAction() {
   const button = $("main-action");
   button.hidden = chosenMinutes === null || !$("results-section").hidden;
+  const hideWorkoutTools = button.hidden || (startingWorkout && !workoutActive);
+  $("more-data-btn").hidden = hideWorkoutTools;
+  $("workout-unit-btn").hidden = hideWorkoutTools;
   if (button.hidden) return;
   button.textContent = workoutActive ? "Stop" : connected ? "Start" : "Connect";
   button.removeAttribute("aria-label");
@@ -505,7 +511,7 @@ function durationText(seconds) {
   return `${minutes}:${String(remainder).padStart(2, "0")}`;
 }
 
-function kilometresText(km) { return `${km.toFixed(2)} kilometres`; }
+function distanceText(km) { return `${(unit === "miles" ? km / 1.609344 : km).toFixed(2)} ${unit === "miles" ? "miles" : "kilometres"}`; }
 
 async function acquireWakeLock() {
   if (!navigator.wakeLock || wakeLock) return;
@@ -703,6 +709,7 @@ async function startWorkout() {
   if (!Bike.isConnected() || !connected || workoutActive || startingWorkout) return;
   const generation = ++workoutGeneration;
   startingWorkout = true;
+  updateMainAction();
   startupRequestedAt = Date.now();
   currentWorkoutWeightKg = loadWeightKg();
   selectedDurationSeconds = selectedMinutes() * 60;
@@ -885,7 +892,7 @@ function renderResults(result, earlier) {
   }
 
   const stats = computeDistanceStats();
-  const distanceSpeech = `Distance travelled: ${kilometresText(result.distanceKm)}. Last 7 days: ${kilometresText(stats.weekKm)}. Last 30 days: ${kilometresText(stats.monthKm)}. All time: ${kilometresText(stats.allKm)}.`;
+  const distanceSpeech = `Distance travelled: ${distanceText(result.distanceKm)}. Last 7 days: ${distanceText(stats.weekKm)}. Last 30 days: ${distanceText(stats.monthKm)}. All time: ${distanceText(stats.allKm)}.`;
   const intro = result.completed ? `${result.durationMinutes} minute workout completed.` : "Workout ended early.";
   speak([intro, ...comparisons, distanceSpeech].join(" "));
   $("results-heading").focus();
@@ -896,6 +903,8 @@ async function finishWorkout(completed, statusText) {
   const generation = ++workoutGeneration;
   workoutActive = false;
   updateMainAction();
+  $("more-data-btn").hidden = true;
+  $("workout-unit-btn").hidden = true;
   $("main-action").disabled = true;
   clearInterval(workoutTimer);
   workoutTimer = null;
@@ -923,8 +932,8 @@ async function finishWorkout(completed, statusText) {
 }
 
 function updateLiveDisplay() {
-  $("live-cadence-value").textContent = String(Math.round(latest.cadenceRpm));
-  $("distance-workout").textContent = kilometresText(workoutMetrics.distanceM / 1000);
+  $("live-cadence-value").textContent = `Cadence: ${Math.round(latest.cadenceRpm)} RPM`;
+  $("distance-workout").textContent = "This workout: " + (distanceText(workoutMetrics.distanceM / 1000));
 }
 
 function updateCadenceSpeech(cadenceRpm) {
@@ -959,7 +968,6 @@ function onBikeData(event) {
     updateCadenceSpeech(latest.cadenceRpm);
   }
   if ("powerW" in measurement) latest.powerW = Math.max(0, measurement.powerW);
-  if ("heartRate" in measurement) latest.heartRate = measurement.heartRate;
 
   if ("distanceM" in measurement) {
     if (workoutActive && lastRawDistanceM !== null) {
@@ -1039,10 +1047,10 @@ function computeDistanceStats() {
 
 function renderDistanceStats(currentWorkoutKm = 0) {
   const stats = computeDistanceStats();
-  $("distance-workout").textContent = kilometresText(currentWorkoutKm);
-  $("distance-week").textContent = kilometresText(stats.weekKm);
-  $("distance-month").textContent = kilometresText(stats.monthKm);
-  $("distance-all").textContent = kilometresText(stats.allKm);
+  $("distance-workout").textContent = "This workout: " + (distanceText(currentWorkoutKm));
+  $("distance-week").textContent = "Last 7 days: " + (distanceText(stats.weekKm));
+  $("distance-month").textContent = "Last 30 days: " + (distanceText(stats.monthKm));
+  $("distance-all").textContent = "All time: " + (distanceText(stats.allKm));
 }
 
 function anotherWorkout() {
@@ -1127,7 +1135,7 @@ function saveWeight(event) {
 
 function init() {
   $("home-btn").addEventListener("click", () => { showSection(null); });
-  $("more-data-btn").addEventListener("click", () => MoreData.open("km", $("more-data-btn")));
+  $("more-data-btn").addEventListener("click", () => MoreData.open(unit, $("more-data-btn")));
   for (const button of document.querySelectorAll(".duration-choice")) button.addEventListener("click", chooseDuration);
   $("main-action").addEventListener("click", () => {
     sections.typhoon.cancelStaleStart();
@@ -1150,6 +1158,12 @@ function init() {
   }
 
   if (!navigator.bluetooth) $("unsupported").hidden = false;
+  $("workout-unit-btn").addEventListener("click", () => DistanceUnits.toggle("typhoon"));
+  DistanceUnits.subscribe("typhoon", value => {
+    unit = value;
+    $("workout-unit-btn").textContent = unit === "miles" ? "Switch to KM" : "Switch to miles";
+    renderDistanceStats(workoutMetrics.distanceM / 1000);
+  });
   renderDistanceStats(0);
   updateMainAction();
 

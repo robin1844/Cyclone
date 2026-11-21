@@ -29,7 +29,7 @@ const BikeData = {
       if (hour !== 65535) out.energyPerHour = hour;
       if (minute !== 255) out.energyPerMinute = minute;
     }
-    if (flags & 512) { const heart = u8(); if (heart > 0 && heart !== 255) out.heartRate = heart; }
+    if (flags & 512) u8(); // Skip the unsupported heart-rate field without retaining it.
     if (flags & 1024) { const met = u8(); if (met !== 255) out.met = met / 10; }
     if (flags & 2048) { const elapsed = u16(); if (elapsed !== 65535) out.bikeElapsedSeconds = elapsed; }
     if (flags & 4096) { const remaining = u16(); if (remaining !== 65535) out.bikeRemainingSeconds = remaining; }
@@ -50,10 +50,23 @@ const BikeData = {
   }
 };
 
+// Remove previously retained unsupported pulse measurements without touching rides.
+try {
+  const key = 'cyclone-typhoon-distances-v1';
+  const entries = JSON.parse(localStorage.getItem(key) || '[]');
+  let changed = false;
+  if (Array.isArray(entries)) for (const entry of entries) {
+    if (entry.metrics?.fields && Object.hasOwn(entry.metrics.fields, 'heartRate')) {
+      delete entry.metrics.fields.heartRate; changed = true;
+    }
+  }
+  if (changed) localStorage.setItem(key, JSON.stringify(entries));
+} catch (error) {}
+
 const WorkoutData = (() => {
   const key = 'cyclone-typhoon-distances-v1';
   let current = null, lastPacket = null, expiring = false;
-  const fields = ['powerW', 'cadenceRpm', 'speedKph', 'heartRate', 'resistance', 'met'];
+  const fields = ['powerW', 'cadenceRpm', 'speedKph', 'resistance', 'met'];
   function weight() {
     const value = Number(localStorage.getItem('typhoon-weight-kg'));
     return value >= 30 && value <= 250 ? value : 75;

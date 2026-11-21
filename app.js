@@ -1,3 +1,28 @@
+const DistanceUnits = (() => {
+  const listeners = new Map();
+  const values = new Map();
+  function get(section) {
+    if (values.has(section)) return values.get(section);
+    try {
+      const value = localStorage.getItem(`cyclone-units-${section}`);
+      if (value === 'km' || value === 'miles') return value;
+    } catch (error) {}
+    return section === 'mistral' ? 'miles' : 'km';
+  }
+  function set(section, value) {
+    if (!['km', 'miles'].includes(value)) return;
+    values.set(section, value);
+    try { localStorage.setItem(`cyclone-units-${section}`, value); } catch (error) {}
+    for (const listener of listeners.get(section) || []) listener(value);
+  }
+  function subscribe(section, listener) {
+    if (!listeners.has(section)) listeners.set(section, []);
+    listeners.get(section).push(listener);
+    listener(get(section));
+  }
+  return { get, set, subscribe, toggle: section => set(section, get(section) === 'km' ? 'miles' : 'km') };
+})();
+
 // FTMS packet decoding shared by all engines and the detailed ride summaries.
 const BikeData = {
   parse(view) {
@@ -29,7 +54,7 @@ const BikeData = {
       if (hour !== 65535) out.energyPerHour = hour;
       if (minute !== 255) out.energyPerMinute = minute;
     }
-    if (flags & 512) { const heart = u8(); if (heart > 0 && heart !== 255) out.heartRate = heart; }
+    if (flags & 512) u8(); // Skip the unsupported heart-rate field without retaining it.
     if (flags & 1024) { const met = u8(); if (met !== 255) out.met = met / 10; }
     if (flags & 2048) { const elapsed = u16(); if (elapsed !== 65535) out.bikeElapsedSeconds = elapsed; }
     if (flags & 4096) { const remaining = u16(); if (remaining !== 65535) out.bikeRemainingSeconds = remaining; }
@@ -50,10 +75,23 @@ const BikeData = {
   }
 };
 
+// Remove previously retained unsupported pulse measurements without touching rides.
+try {
+  const key = 'cyclone-typhoon-distances-v1';
+  const entries = JSON.parse(localStorage.getItem(key) || '[]');
+  let changed = false;
+  if (Array.isArray(entries)) for (const entry of entries) {
+    if (entry.metrics?.fields && Object.hasOwn(entry.metrics.fields, 'heartRate')) {
+      delete entry.metrics.fields.heartRate; changed = true;
+    }
+  }
+  if (changed) localStorage.setItem(key, JSON.stringify(entries));
+} catch (error) {}
+
 const WorkoutData = (() => {
   const key = 'cyclone-typhoon-distances-v1';
   let current = null, lastPacket = null, expiring = false;
-  const fields = ['powerW', 'cadenceRpm', 'speedKph', 'heartRate', 'resistance', 'met'];
+  const fields = ['powerW', 'cadenceRpm', 'speedKph', 'resistance', 'met'];
   function weight() {
     const value = Number(localStorage.getItem('typhoon-weight-kg'));
     return value >= 30 && value <= 250 ? value : 75;
@@ -278,11 +316,16 @@ function sectionDocument(name) {
 }
 
 let navigation = Promise.resolve();
-function showSection(name, updateHistory = true) {
+function showSection(route, updateHistory = true) {
+  let [name, view] = String(route || "").split("/");
   navigation = navigation.then(async () => {
     if (!Object.hasOwn(sections, name)) name = null;
-    if (name === activeSection) return;
-    MoreData.close();
+    if (name === activeSection) {
+      if (name && view === "data") MoreData.open(DistanceUnits.get(name), document.getElementById(`${name}-more-data-btn`), false);
+      else MoreData.close(false);
+      return;
+    }
+    MoreData.close(false);
     if (activeSection) { sections[activeSection].cancelStaleStart?.(); WorkoutData.expire(sections[activeSection]); }
     const previous = activeSection;
     if (previous) await sections[previous].leave();
@@ -290,11 +333,14 @@ function showSection(name, updateHistory = true) {
     for (const key of Object.keys(sections)) document.getElementById(`${key}-section`).hidden = key !== name;
     document.getElementById("launcher").hidden = Boolean(name);
     document.title = name ? name[0].toUpperCase() + name.slice(1) : "Cyclone";
-    if (updateHistory) history.pushState(null, "", name ? `#${name}` : location.pathname + location.search);
+    if (updateHistory) history.pushState(null, "", name ? `#${name}${view === "data" ? "/data" : ""}` : location.pathname + location.search);
     if (navigator.mediaSession) {
       try { navigator.mediaSession.setActionHandler("nexttrack", null); } catch (error) {}
     }
-    if (name) sections[name].enter();
+    if (name) {
+      sections[name].enter();
+      if (view === "data") MoreData.open(DistanceUnits.get(name), document.getElementById(`${name}-more-data-btn`), false);
+    }
     else {
       document.getElementById(`open-${previous || "cyclone"}`).focus();
       document.body.style.background = "";
@@ -310,7 +356,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 const MoreData = (() => {
   const $ = id => document.getElementById(id);
   const dialog = $('more-data-dialog');
-  let period = 'today', unit = 'km', timer = null, returnFocus = null;
+  let period = 'today', unit = 'km', timer = null, returnFocus = null, workoutRoot = null, previousTitle = '', savedScroll = 0, pushedRoute = false;
   const dateKey = date => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
   function time(seconds) {
     const total = Math.round(seconds);
@@ -368,9 +414,8 @@ const MoreData = (() => {
         ['Average Watts per kilo', kgSeconds > 0 ? `${(kgIntegral / kgSeconds).toFixed(2)} W/kg` : 'Not recorded'],
         ['Peak Watts per kilo', kgPeak !== null ? `${kgPeak.toFixed(2)} W/kg` : 'Not recorded']
       ]],
-      ['Cadence and body measurements', [
+      ['Cadence and resistance', [
         ['Average cadence', average('cadenceRpm', 'RPM')], ['Peak cadence', peak('cadenceRpm', 'RPM')],
-        ['Average heart rate', average('heartRate', 'bpm')], ['Peak heart rate', peak('heartRate', 'bpm')],
         ['Average resistance level', average('resistance', '')], ['Peak resistance level', peak('resistance', '')],
         ['Average metabolic equivalent', average('met', 'MET')]
       ]]
@@ -381,16 +426,17 @@ const MoreData = (() => {
       let list = content.querySelector(`[data-group="${groupIndex}"]`);
       if (!list) {
         const heading = document.createElement('h3'); heading.textContent = title; content.append(heading);
-        list = document.createElement('dl'); list.dataset.group = groupIndex; content.append(list);
+        list = document.createElement('div'); list.dataset.group = groupIndex; content.append(list);
         for (let i = 0; i < rows.length; i++) {
-          const row = document.createElement('div'); row.className = 'data-row';
-          row.append(document.createElement('dt'), document.createElement('dd')); list.append(row);
+          const row = document.createElement('p'); row.className = 'data-row';
+          list.append(row);
         }
       }
       rows.forEach(([label, value], index) => {
         const row = list.children[index];
-        if (row.children[0].textContent !== label) row.children[0].textContent = label;
-        if (row.children[1].textContent !== value) row.children[1].textContent = value;
+        row.dataset.label = label;
+        const text = `${label}: ${value}`;
+        if (row.textContent !== text) row.textContent = text;
       });
     }
     const missing = entries.length - detailed.length;
@@ -398,32 +444,65 @@ const MoreData = (() => {
   }
   function select(value) {
     period = value;
-    $('data-today').setAttribute('aria-pressed', String(value === 'today'));
-    $('data-all-time').setAttribute('aria-pressed', String(value === 'all'));
+    $('data-today').classList.toggle('selected', value === 'today');
+    $('data-all-time').classList.toggle('selected', value === 'all');
+    $('data-today').textContent = value === 'today' ? 'Today (selected)' : 'Today';
+    $('data-all-time').textContent = value === 'all' ? 'All time (selected)' : 'All time';
     render();
   }
-  function open(selectedUnit = 'km', opener = document.activeElement) {
+  function open(selectedUnit = 'km', opener = document.activeElement, updateHistory = true) {
+    if (!dialog.hidden) return;
     returnFocus = opener;
+    workoutRoot = document.getElementById(`${activeSection}-section`);
+    previousTitle = document.title;
+    savedScroll = window.scrollY;
+    pushedRoute = updateHistory;
     unit = selectedUnit;
+    $('data-unit-btn').textContent = unit === 'miles' ? 'Switch to KM' : 'Switch to miles';
     $('data-weight').value = String(WorkoutData.weight());
     $('data-weight-status').textContent = '';
     select('today');
-    dialog.showModal();
-    $('data-today').focus();
+    if (workoutRoot) workoutRoot.hidden = true;
+    dialog.hidden = false;
+    document.title = 'More data';
+    if (updateHistory) history.pushState(null, '', `#${activeSection}/data`);
+    $('close-more-data').focus();
+    window.scrollTo(0, 0);
     clearInterval(timer); timer = setInterval(render, 1000);
+  }
+  function close(updateHistory = true) {
+    if (dialog.hidden) return;
+    if (updateHistory && pushedRoute) { history.back(); return; }
+    dialog.hidden = true;
+    if (workoutRoot) workoutRoot.hidden = false;
+    clearInterval(timer); timer = null;
+    document.title = previousTitle;
+    if (updateHistory) history.replaceState(null, '', `#${activeSection}`);
+    window.scrollTo(0, savedScroll);
+    returnFocus?.focus();
   }
   $('data-today').addEventListener('click', () => select('today'));
   $('data-all-time').addEventListener('click', () => select('all'));
-  $('close-more-data').addEventListener('click', () => dialog.close());
-  dialog.addEventListener('close', () => { clearInterval(timer); timer = null; returnFocus?.focus(); });
-  $('data-weight-form').addEventListener('submit', event => {
-    event.preventDefault();
+  $('data-unit-btn').addEventListener('click', () => {
+    DistanceUnits.toggle(activeSection);
+    unit = DistanceUnits.get(activeSection);
+    $('data-unit-btn').textContent = unit === 'miles' ? 'Switch to KM' : 'Switch to miles';
+    render();
+  });
+  $('close-more-data').addEventListener('click', () => close());
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !dialog.hidden) { event.preventDefault(); close(); }
+  });
+  function saveWeight() {
+    if (!$('data-weight').reportValidity()) return;
     const weight = Number($('data-weight').value);
     if (!Number.isFinite(weight) || weight < 30 || weight > 250) return;
     localStorage.setItem('typhoon-weight-kg', String(weight));
     $('data-weight-status').textContent = `Weight saved: ${weight} kg. It will be used for future rides.`;
-  });
-  return { open, close: () => { if (dialog.open) dialog.close(); } };
+  }
+  $('save-data-weight').addEventListener('click', saveWeight);
+  $('data-weight').addEventListener('keydown', event => { if (event.key === 'Enter') saveWeight(); });
+  return { open, close };
 })();
 
 
@@ -436,6 +515,8 @@ const DISTANCE_KEY = "cyclone-typhoon-distances-v1";
 const DISTANCE_MIGRATION_KEY = "cyclone-typhoon-distances-migrated-v1";
 const $ = id => document.getElementById(id);
 
+let unit = DistanceUnits.get("cyclone");
+const distanceText = km => `${(unit === "miles" ? km / 1.609344 : km).toFixed(2)} ${unit === "miles" ? "miles" : "km"}`;
 let device = null, char = null;
 let connected = false;
 let sessionActive = false;
@@ -460,10 +541,12 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function speak(text) {
+  if (activeSection !== "cyclone") return;
   if (!text) return;
   const r = $("spoken");
   r.textContent = "";
   requestAnimationFrame(() => {
+    if (activeSection !== "cyclone") return;
     r.textContent = text;
     // Clear after VoiceOver has had time to read it so it doesn't repeat on swipe
     clearTimeout(speakTimer);
@@ -474,7 +557,7 @@ function speak(text) {
 let lastBand = null;
 function updateRpm(cadenceRpm) {
   const band = Math.round(cadenceRpm / 5) * 5;
-  $("rpm-value").textContent = band;
+  $("rpm-value").textContent = `Cadence: ${band} RPM`;
   if (band !== lastBand) {
     lastBand = band;
     speak(`${band}`);
@@ -554,10 +637,10 @@ function computeStats() {
 
 function renderStats() {
   const { todayKm, weekKm, monthKm, allKm } = computeStats();
-  $("stat-today").textContent   = `${todayKm.toFixed(2)} km`;
-  $("stat-week").textContent    = `${weekKm.toFixed(2)} km`;
-  $("stat-month").textContent   = `${monthKm.toFixed(2)} km`;
-  $("stat-alltime").textContent = `${allKm.toFixed(2)} km`;
+  $("stat-today").textContent   = "Today: " + (`${distanceText(todayKm)}`);
+  $("stat-week").textContent    = "Last 7 days: " + (`${distanceText(weekKm)}`);
+  $("stat-month").textContent   = "Last 30 days: " + (`${distanceText(monthKm)}`);
+  $("stat-alltime").textContent = "All time: " + (`${distanceText(allKm)}`);
 }
 
 function parseBike(view) { return BikeData.parse(view); }
@@ -590,7 +673,7 @@ function setSessionUI() {
   btn.disabled = false;
   $("rpm-display").hidden = false;
   lastBand = null;
-  $("rpm-value").textContent = "0";
+  $("rpm-value").textContent = "Cadence: 0 RPM";
 }
 
 function setReadyUI() {
@@ -627,7 +710,7 @@ function endSession() {
   const km = sessionDistanceM / 1000;
   recordSession(km);
   renderStats();
-  speak(`Today: ${km.toFixed(2)} kilometres`);
+  speak(`Workout distance: ${distanceText(km)}`);
 }
 
 let audioContext = null;
@@ -864,7 +947,7 @@ $("main-btn").addEventListener("click", () => {
   else connect();
 });
 $("home-btn").addEventListener("click", leaveCyclone);
-$("more-data-btn").addEventListener("click", () => MoreData.open("km", $("more-data-btn")));
+$("more-data-btn").addEventListener("click", () => MoreData.open(unit, $("more-data-btn")));
 $("reset-btn").addEventListener("click", resetData);
 $("choose-audio-btn").addEventListener("click", chooseWorkout);
 $("audio-file").addEventListener("change", loadWorkout);
@@ -874,6 +957,13 @@ $("workout-audio").addEventListener("pause", updatePlaybackButton);
 $("workout-audio").addEventListener("ended", updatePlaybackButton);
 renderStats();
 
+
+$("workout-unit-btn").addEventListener("click", () => DistanceUnits.toggle("cyclone"));
+DistanceUnits.subscribe("cyclone", value => {
+  unit = value;
+  $("workout-unit-btn").textContent = unit === "miles" ? "Switch to KM" : "Switch to miles";
+  renderStats();
+});
 
 sections["cyclone"] = {
   data: onData,
@@ -930,6 +1020,7 @@ const INDOOR_BIKE_DATA = 0x2ad2;
 const SESSION_KEY = "typhoon-sessions-v1";
 const DISTANCE_KEY = "cyclone-typhoon-distances-v1";
 const DISTANCE_MIGRATION_KEY = "cyclone-typhoon-distances-migrated-v1";
+let unit = DistanceUnits.get("typhoon");
 const DEVICE_KEY = "typhoon-device-name";
 const LAST_START_KEY = "typhoon-last-start-track";
 const LAST_WORKOUT_TRACKS_KEY = "typhoon-last-workout-tracks";
@@ -977,7 +1068,7 @@ let previousTimerRemaining = 0;
 let announcedTimeMilestones = new Set();
 let lastDataTime = null;
 let lastRawDistanceM = null;
-let latest = { speedKph: 0, cadenceRpm: 0, powerW: 0, heartRate: 0 };
+let latest = { speedKph: 0, cadenceRpm: 0, powerW: 0 };
 
 let workoutActive = false;
 let startingWorkout = false;
@@ -1088,10 +1179,12 @@ function resetCombinedDistances() {
 }
 
 function speak(text) {
+  if (activeSection !== "typhoon") return;
   if (!text) return;
   const region = $("spoken");
   region.textContent = "";
   requestAnimationFrame(() => {
+    if (activeSection !== "typhoon") return;
     region.textContent = text;
     clearTimeout(spokenTimer);
     spokenTimer = setTimeout(() => { region.textContent = ""; }, 10000);
@@ -1112,6 +1205,9 @@ function setSetupEnabled(enabled) {
 function updateMainAction() {
   const button = $("main-action");
   button.hidden = chosenMinutes === null || !$("results-section").hidden;
+  const hideWorkoutTools = button.hidden || (startingWorkout && !workoutActive);
+  $("more-data-btn").hidden = hideWorkoutTools;
+  $("workout-unit-btn").hidden = hideWorkoutTools;
   if (button.hidden) return;
   button.textContent = workoutActive ? "Stop" : connected ? "Start" : "Connect";
   button.removeAttribute("aria-label");
@@ -1193,7 +1289,7 @@ function durationText(seconds) {
   return `${minutes}:${String(remainder).padStart(2, "0")}`;
 }
 
-function kilometresText(km) { return `${km.toFixed(2)} kilometres`; }
+function distanceText(km) { return `${(unit === "miles" ? km / 1.609344 : km).toFixed(2)} ${unit === "miles" ? "miles" : "kilometres"}`; }
 
 async function acquireWakeLock() {
   if (!navigator.wakeLock || wakeLock) return;
@@ -1391,6 +1487,7 @@ async function startWorkout() {
   if (!Bike.isConnected() || !connected || workoutActive || startingWorkout) return;
   const generation = ++workoutGeneration;
   startingWorkout = true;
+  updateMainAction();
   startupRequestedAt = Date.now();
   currentWorkoutWeightKg = loadWeightKg();
   selectedDurationSeconds = selectedMinutes() * 60;
@@ -1573,7 +1670,7 @@ function renderResults(result, earlier) {
   }
 
   const stats = computeDistanceStats();
-  const distanceSpeech = `Distance travelled: ${kilometresText(result.distanceKm)}. Last 7 days: ${kilometresText(stats.weekKm)}. Last 30 days: ${kilometresText(stats.monthKm)}. All time: ${kilometresText(stats.allKm)}.`;
+  const distanceSpeech = `Distance travelled: ${distanceText(result.distanceKm)}. Last 7 days: ${distanceText(stats.weekKm)}. Last 30 days: ${distanceText(stats.monthKm)}. All time: ${distanceText(stats.allKm)}.`;
   const intro = result.completed ? `${result.durationMinutes} minute workout completed.` : "Workout ended early.";
   speak([intro, ...comparisons, distanceSpeech].join(" "));
   $("results-heading").focus();
@@ -1584,6 +1681,8 @@ async function finishWorkout(completed, statusText) {
   const generation = ++workoutGeneration;
   workoutActive = false;
   updateMainAction();
+  $("more-data-btn").hidden = true;
+  $("workout-unit-btn").hidden = true;
   $("main-action").disabled = true;
   clearInterval(workoutTimer);
   workoutTimer = null;
@@ -1611,8 +1710,8 @@ async function finishWorkout(completed, statusText) {
 }
 
 function updateLiveDisplay() {
-  $("live-cadence-value").textContent = String(Math.round(latest.cadenceRpm));
-  $("distance-workout").textContent = kilometresText(workoutMetrics.distanceM / 1000);
+  $("live-cadence-value").textContent = `Cadence: ${Math.round(latest.cadenceRpm)} RPM`;
+  $("distance-workout").textContent = "This workout: " + (distanceText(workoutMetrics.distanceM / 1000));
 }
 
 function updateCadenceSpeech(cadenceRpm) {
@@ -1647,7 +1746,6 @@ function onBikeData(event) {
     updateCadenceSpeech(latest.cadenceRpm);
   }
   if ("powerW" in measurement) latest.powerW = Math.max(0, measurement.powerW);
-  if ("heartRate" in measurement) latest.heartRate = measurement.heartRate;
 
   if ("distanceM" in measurement) {
     if (workoutActive && lastRawDistanceM !== null) {
@@ -1727,10 +1825,10 @@ function computeDistanceStats() {
 
 function renderDistanceStats(currentWorkoutKm = 0) {
   const stats = computeDistanceStats();
-  $("distance-workout").textContent = kilometresText(currentWorkoutKm);
-  $("distance-week").textContent = kilometresText(stats.weekKm);
-  $("distance-month").textContent = kilometresText(stats.monthKm);
-  $("distance-all").textContent = kilometresText(stats.allKm);
+  $("distance-workout").textContent = "This workout: " + (distanceText(currentWorkoutKm));
+  $("distance-week").textContent = "Last 7 days: " + (distanceText(stats.weekKm));
+  $("distance-month").textContent = "Last 30 days: " + (distanceText(stats.monthKm));
+  $("distance-all").textContent = "All time: " + (distanceText(stats.allKm));
 }
 
 function anotherWorkout() {
@@ -1815,7 +1913,7 @@ function saveWeight(event) {
 
 function init() {
   $("home-btn").addEventListener("click", () => { showSection(null); });
-  $("more-data-btn").addEventListener("click", () => MoreData.open("km", $("more-data-btn")));
+  $("more-data-btn").addEventListener("click", () => MoreData.open(unit, $("more-data-btn")));
   for (const button of document.querySelectorAll(".duration-choice")) button.addEventListener("click", chooseDuration);
   $("main-action").addEventListener("click", () => {
     sections.typhoon.cancelStaleStart();
@@ -1838,6 +1936,12 @@ function init() {
   }
 
   if (!navigator.bluetooth) $("unsupported").hidden = false;
+  $("workout-unit-btn").addEventListener("click", () => DistanceUnits.toggle("typhoon"));
+  DistanceUnits.subscribe("typhoon", value => {
+    unit = value;
+    $("workout-unit-btn").textContent = unit === "miles" ? "Switch to KM" : "Switch to miles";
+    renderDistanceStats(workoutMetrics.distanceM / 1000);
+  });
   renderDistanceStats(0);
   updateMainAction();
 
@@ -1912,8 +2016,10 @@ const DISTANCE_KEY = "cyclone-typhoon-distances-v1";
 const DISTANCE_MIGRATION_KEY = "cyclone-typhoon-distances-migrated-v1";
 const $ = id => document.getElementById(id);
 
-let unit = "miles";
+let unit = DistanceUnits.get("mistral");
 let targetDistance = null;
+let targetDistanceM = null;
+let lastResult = null;
 let nextMilestone = 0.5;
 let announcedFinishDistances = new Set();
 let sessionStartedAt = null;
@@ -1927,12 +2033,15 @@ const distanceText = km => `${(km * 1000 / metresPerUnit()).toFixed(2)} ${unitLa
 function renderProgress() {
   const travelled = (sessionDistanceM / metresPerUnit()).toFixed(1).replace(/\.0$/, "");
   const suffix = unit === "miles" ? " miles" : "K";
-  $("distance-progress").textContent = `Distance: ${travelled}${suffix} of ${targetDistance}${suffix}`;
+  const goal = (targetDistanceM / metresPerUnit()).toFixed(2).replace(/\.?0+$/, "");
+  $("distance-progress").textContent = `Distance: ${travelled}${suffix} of ${goal}${suffix}`;
 }
 function chooseDistance(value) {
   clearTimeout(resultAnnouncementTimer);
   $("results-section").hidden = true;
   targetDistance = value;
+  targetDistanceM = value * metresPerUnit();
+  lastResult = null;
   sessionDistanceM = 0;
   $("distance-setup").hidden = true;
   $("workout-screen").hidden = false;
@@ -1943,19 +2052,19 @@ function chooseDistance(value) {
 function updateDistance() {
   const travelled = sessionDistanceM / metresPerUnit();
   renderProgress();
-  if (travelled >= targetDistance) {
+  if (sessionDistanceM >= targetDistanceM) {
     stop();
     return;
   }
   let announcement = null;
   while (travelled >= nextMilestone) {
-    const remaining = targetDistance - nextMilestone;
+    const remaining = Number((targetDistanceM / metresPerUnit() - nextMilestone).toFixed(1));
     const down = unit === "miles" ? `${nextMilestone} miles` : `${nextMilestone}K`;
     const toGo = unit === "miles" && remaining === 0.5 ? "half a mile" : `${remaining}`;
     announcement = `${down} down, ${toGo} to go.`;
     nextMilestone += 0.5;
   }
-  const remainingMetres = targetDistance * metresPerUnit() - sessionDistanceM;
+  const remainingMetres = targetDistanceM - sessionDistanceM;
   for (const distance of [200, 100, 50]) {
     const thresholdMetres = unit === "miles" ? distance * 0.9144 : distance;
     if (remainingMetres <= thresholdMetres + 1e-6 && !announcedFinishDistances.has(distance)) {
@@ -1994,6 +2103,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function speak(text) {
+  if (activeSection !== "mistral") return;
   if (!text) return;
   // Keep cadence quiet while VoiceOver receives and reads a priority message.
   cadenceBlockedUntil = performance.now() + 8000;
@@ -2006,6 +2116,7 @@ function speak(text) {
   // A separate task gives the accessibility tree time to register the empty
   // region, including before the very first distance announcement.
   speakUpdateTimer = setTimeout(() => {
+    if (activeSection !== "mistral") return;
     r.textContent = text;
     speakTimer = setTimeout(() => { r.textContent = ""; }, 8000);
   }, 100);
@@ -2014,7 +2125,7 @@ function speak(text) {
 let lastBand = null;
 function updateRpm(cadenceRpm) {
   const band = Math.round(cadenceRpm / 5) * 5;
-  $("rpm-value").textContent = band;
+  $("rpm-value").textContent = `Cadence: ${band} RPM`;
   if (band !== lastBand) {
     lastBand = band;
     if (performance.now() < cadenceBlockedUntil) return;
@@ -2098,10 +2209,10 @@ function computeStats() {
 
 function renderStats() {
   const { todayKm, weekKm, monthKm, allKm } = computeStats();
-  $("stat-today").textContent   = `${distanceText(todayKm)}`;
-  $("stat-week").textContent    = `${distanceText(weekKm)}`;
-  $("stat-month").textContent   = `${distanceText(monthKm)}`;
-  $("stat-alltime").textContent = `${distanceText(allKm)}`;
+  $("stat-today").textContent   = "Today: " + (`${distanceText(todayKm)}`);
+  $("stat-week").textContent    = "Last 7 days: " + (`${distanceText(weekKm)}`);
+  $("stat-month").textContent   = "Last 30 days: " + (`${distanceText(monthKm)}`);
+  $("stat-alltime").textContent = "All time: " + (`${distanceText(allKm)}`);
 }
 
 function parseBike(view) { return BikeData.parse(view); }
@@ -2134,7 +2245,7 @@ function setSessionUI() {
   btn.disabled = false;
   $("rpm-display").hidden = false;
   lastBand = null;
-  $("rpm-value").textContent = "0";
+  $("rpm-value").textContent = "Cadence: 0 RPM";
 }
 
 function setReadyUI() {
@@ -2189,17 +2300,18 @@ function endSession() {
   const averageSpeed = elapsedSeconds > 0 ? sessionDistanceM / metresPerUnit() / (elapsedSeconds / 3600) : 0;
   recordSession(km);
   renderStats();
-  $("result-time").textContent = timeText(elapsedSeconds);
-  $("result-speed").textContent = `${averageSpeed.toFixed(1)} ${unit === "miles" ? "mph" : "km/h"}`;
+  lastResult = { elapsedSeconds, distanceM: sessionDistanceM };
+  $("result-time").textContent = "Time: " + (timeText(elapsedSeconds));
+  $("result-speed").textContent = "Average speed: " + (`${averageSpeed.toFixed(1)} ${unit === "miles" ? "mph" : "km/h"}`);
   $("results-section").hidden = false;
   $("results-heading").focus();
-  const completed = sessionDistanceM >= targetDistance * metresPerUnit();
+  const completed = sessionDistanceM >= targetDistanceM;
   const intro = completed ? "Workout complete." : "Workout stopped.";
-  const speedUnit = unit === "miles" ? "miles per hour" : "kilometres per hour";
   // Let the finish tones end before reading the two simple workout results.
   clearTimeout(resultAnnouncementTimer);
   resultAnnouncementTimer = setTimeout(() => {
-    speak(`${intro} Time: ${spokenTime(elapsedSeconds)}. Average speed: ${averageSpeed.toFixed(1)} ${speedUnit}.`);
+    const speedNow = elapsedSeconds > 0 ? sessionDistanceM / metresPerUnit() / (elapsedSeconds / 3600) : 0;
+    speak(`${intro} Time: ${spokenTime(elapsedSeconds)}. Average speed: ${speedNow.toFixed(1)} ${unit === "miles" ? "miles per hour" : "kilometres per hour"}.`);
   }, 1100);
 }
 
@@ -2336,6 +2448,7 @@ async function startSession() {
   }
   clearTimeout(resultAnnouncementTimer);
   $("results-section").hidden = true;
+  lastResult = null;
   sessionStartedAt = performance.now();
   sessionDistanceM = 0;
   nextMilestone = 0.5;
@@ -2460,12 +2573,25 @@ $("workout-audio").addEventListener("ended", updatePlaybackButton);
 document.querySelectorAll(".distance-choice").forEach(button => {
   button.addEventListener("click", () => chooseDistance(Number(button.dataset.distance)));
 });
-$("unit-btn").addEventListener("click", () => {
-  unit = unit === "miles" ? "km" : "miles";
+$("unit-btn").addEventListener("click", () => DistanceUnits.toggle("mistral"));
+$("workout-unit-btn").addEventListener("click", () => DistanceUnits.toggle("mistral"));
+DistanceUnits.subscribe("mistral", value => {
+  const changed = unit !== value;
+  unit = value;
   document.querySelectorAll(".distance-choice").forEach(button => {
     button.textContent = `${button.dataset.distance} ${unitLabel()}`;
   });
-  $("unit-btn").textContent = unit === "miles" ? "Switch to KM" : "Switch to miles";
+  for (const id of ["unit-btn", "workout-unit-btn"]) $(id).textContent = unit === "miles" ? "Switch to KM" : "Switch to miles";
+  if (targetDistanceM !== null) renderProgress();
+  if (sessionActive && changed) {
+    nextMilestone = (Math.floor(sessionDistanceM / metresPerUnit() * 2) + 1) / 2;
+    const remaining = targetDistanceM - sessionDistanceM;
+    announcedFinishDistances = new Set([200, 100, 50].filter(distance => remaining <= distance * (unit === "miles" ? 0.9144 : 1)));
+  }
+  if (lastResult) {
+    const speed = lastResult.elapsedSeconds > 0 ? lastResult.distanceM / metresPerUnit() / (lastResult.elapsedSeconds / 3600) : 0;
+    $("result-speed").textContent = `Average speed: ${speed.toFixed(1)} ${unit === "miles" ? "mph" : "km/h"}`;
+  }
   renderStats();
 });
 $("change-distance-btn").addEventListener("click", () => {

@@ -139,7 +139,7 @@
     color: var(--muted);
   }
   #rpm-value {
-    font-size: 6rem;
+    font-size: clamp(2rem, 10vw, 3rem);
     font-weight: 800;
     font-variant-numeric: tabular-nums;
     line-height: 1;
@@ -210,31 +210,19 @@
   </div>
 
   <div id="rpm-display" hidden>
-    <div id="rpm-label">Cadence (RPM)</div>
-    <div id="rpm-value">0</div>
+    <p id="rpm-value">Cadence: 0 RPM</p>
   </div>
 
   <div id="stats">
-    <div class="stat-row">
-      <span class="stat-label">Today</span>
-      <span class="stat-value" id="stat-today">0.00 km</span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">Last 7 days</span>
-      <span class="stat-value" id="stat-week">0.00 km</span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">Last 30 days</span>
-      <span class="stat-value" id="stat-month">0.00 km</span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">All time</span>
-      <span class="stat-value" id="stat-alltime">0.00 km</span>
-    </div>
+    <p class="stat-row" id="stat-today">Today: 0.00 km</p>
+    <p class="stat-row" id="stat-week">Last 7 days: 0.00 km</p>
+    <p class="stat-row" id="stat-month">Last 30 days: 0.00 km</p>
+    <p class="stat-row" id="stat-alltime">All time: 0.00 km</p>
   </div>
 
   <button id="reset-btn">Reset all distance data</button>
   <button id="more-data-btn" class="more-data-button" type="button">More data</button>
+  <button id="workout-unit-btn" class="more-data-button" type="button">Switch to miles</button>
 </div>
 
 <p id="spoken" class="vh" aria-live="assertive" aria-atomic="true"></p>
@@ -246,6 +234,8 @@ const DISTANCE_KEY = "cyclone-typhoon-distances-v1";
 const DISTANCE_MIGRATION_KEY = "cyclone-typhoon-distances-migrated-v1";
 const $ = id => document.getElementById(id);
 
+let unit = DistanceUnits.get("cyclone");
+const distanceText = km => `${(unit === "miles" ? km / 1.609344 : km).toFixed(2)} ${unit === "miles" ? "miles" : "km"}`;
 let device = null, char = null;
 let connected = false;
 let sessionActive = false;
@@ -270,10 +260,12 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function speak(text) {
+  if (activeSection !== "cyclone") return;
   if (!text) return;
   const r = $("spoken");
   r.textContent = "";
   requestAnimationFrame(() => {
+    if (activeSection !== "cyclone") return;
     r.textContent = text;
     // Clear after VoiceOver has had time to read it so it doesn't repeat on swipe
     clearTimeout(speakTimer);
@@ -284,7 +276,7 @@ function speak(text) {
 let lastBand = null;
 function updateRpm(cadenceRpm) {
   const band = Math.round(cadenceRpm / 5) * 5;
-  $("rpm-value").textContent = band;
+  $("rpm-value").textContent = `Cadence: ${band} RPM`;
   if (band !== lastBand) {
     lastBand = band;
     speak(`${band}`);
@@ -364,10 +356,10 @@ function computeStats() {
 
 function renderStats() {
   const { todayKm, weekKm, monthKm, allKm } = computeStats();
-  $("stat-today").textContent   = `${todayKm.toFixed(2)} km`;
-  $("stat-week").textContent    = `${weekKm.toFixed(2)} km`;
-  $("stat-month").textContent   = `${monthKm.toFixed(2)} km`;
-  $("stat-alltime").textContent = `${allKm.toFixed(2)} km`;
+  $("stat-today").textContent   = "Today: " + (`${distanceText(todayKm)}`);
+  $("stat-week").textContent    = "Last 7 days: " + (`${distanceText(weekKm)}`);
+  $("stat-month").textContent   = "Last 30 days: " + (`${distanceText(monthKm)}`);
+  $("stat-alltime").textContent = "All time: " + (`${distanceText(allKm)}`);
 }
 
 function parseBike(view) { return BikeData.parse(view); }
@@ -400,7 +392,7 @@ function setSessionUI() {
   btn.disabled = false;
   $("rpm-display").hidden = false;
   lastBand = null;
-  $("rpm-value").textContent = "0";
+  $("rpm-value").textContent = "Cadence: 0 RPM";
 }
 
 function setReadyUI() {
@@ -437,7 +429,7 @@ function endSession() {
   const km = sessionDistanceM / 1000;
   recordSession(km);
   renderStats();
-  speak(`Today: ${km.toFixed(2)} kilometres`);
+  speak(`Workout distance: ${distanceText(km)}`);
 }
 
 let audioContext = null;
@@ -674,7 +666,7 @@ $("main-btn").addEventListener("click", () => {
   else connect();
 });
 $("home-btn").addEventListener("click", leaveCyclone);
-$("more-data-btn").addEventListener("click", () => MoreData.open("km", $("more-data-btn")));
+$("more-data-btn").addEventListener("click", () => MoreData.open(unit, $("more-data-btn")));
 $("reset-btn").addEventListener("click", resetData);
 $("choose-audio-btn").addEventListener("click", chooseWorkout);
 $("audio-file").addEventListener("change", loadWorkout);
@@ -684,6 +676,13 @@ $("workout-audio").addEventListener("pause", updatePlaybackButton);
 $("workout-audio").addEventListener("ended", updatePlaybackButton);
 renderStats();
 
+
+$("workout-unit-btn").addEventListener("click", () => DistanceUnits.toggle("cyclone"));
+DistanceUnits.subscribe("cyclone", value => {
+  unit = value;
+  $("workout-unit-btn").textContent = unit === "miles" ? "Switch to KM" : "Switch to miles";
+  renderStats();
+});
 
 sections["cyclone"] = {
   data: onData,

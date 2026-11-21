@@ -150,7 +150,7 @@
     color: var(--muted);
   }
   #rpm-value {
-    font-size: 6rem;
+    font-size: clamp(2rem, 10vw, 3rem);
     font-weight: 800;
     font-variant-numeric: tabular-nums;
     line-height: 1;
@@ -235,38 +235,26 @@
   <p id="distance-progress"></p>
 
   <div id="rpm-display" hidden>
-    <div id="rpm-label">Cadence (RPM)</div>
-    <div id="rpm-value">0</div>
+    <p id="rpm-value">Cadence: 0 RPM</p>
   </div>
 
-  <section id="results-section" aria-labelledby="results-heading" hidden>
+  <div id="results-section" hidden>
     <h2 id="results-heading" tabindex="-1">Workout results</h2>
-    <div class="stat-row"><span class="stat-label">Time</span><span class="stat-value" id="result-time"></span></div>
-    <div class="stat-row"><span class="stat-label">Average speed</span><span class="stat-value" id="result-speed"></span></div>
-  </section>
+    <p class="stat-row" id="result-time">Time: </p>
+    <p class="stat-row" id="result-speed">Average speed: </p>
+  </div>
 
   <div id="stats">
-    <div class="stat-row">
-      <span class="stat-label">Today</span>
-      <span class="stat-value" id="stat-today">0.00 km</span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">Last 7 days</span>
-      <span class="stat-value" id="stat-week">0.00 km</span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">Last 30 days</span>
-      <span class="stat-value" id="stat-month">0.00 km</span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">All time</span>
-      <span class="stat-value" id="stat-alltime">0.00 km</span>
-    </div>
+    <p class="stat-row" id="stat-today">Today: 0.00 km</p>
+    <p class="stat-row" id="stat-week">Last 7 days: 0.00 km</p>
+    <p class="stat-row" id="stat-month">Last 30 days: 0.00 km</p>
+    <p class="stat-row" id="stat-alltime">All time: 0.00 km</p>
   </div>
 
   <button id="reset-btn">Reset all distance data</button>
   <button id="change-distance-btn" type="button">Choose distance</button>
   <button id="more-data-btn" class="more-data-button" type="button">More data</button>
+  <button id="workout-unit-btn" class="more-data-button" type="button">Switch to KM</button>
   </div>
 </div>
 
@@ -280,8 +268,10 @@ const DISTANCE_KEY = "cyclone-typhoon-distances-v1";
 const DISTANCE_MIGRATION_KEY = "cyclone-typhoon-distances-migrated-v1";
 const $ = id => document.getElementById(id);
 
-let unit = "miles";
+let unit = DistanceUnits.get("mistral");
 let targetDistance = null;
+let targetDistanceM = null;
+let lastResult = null;
 let nextMilestone = 0.5;
 let announcedFinishDistances = new Set();
 let sessionStartedAt = null;
@@ -295,12 +285,15 @@ const distanceText = km => `${(km * 1000 / metresPerUnit()).toFixed(2)} ${unitLa
 function renderProgress() {
   const travelled = (sessionDistanceM / metresPerUnit()).toFixed(1).replace(/\.0$/, "");
   const suffix = unit === "miles" ? " miles" : "K";
-  $("distance-progress").textContent = `Distance: ${travelled}${suffix} of ${targetDistance}${suffix}`;
+  const goal = (targetDistanceM / metresPerUnit()).toFixed(2).replace(/\.?0+$/, "");
+  $("distance-progress").textContent = `Distance: ${travelled}${suffix} of ${goal}${suffix}`;
 }
 function chooseDistance(value) {
   clearTimeout(resultAnnouncementTimer);
   $("results-section").hidden = true;
   targetDistance = value;
+  targetDistanceM = value * metresPerUnit();
+  lastResult = null;
   sessionDistanceM = 0;
   $("distance-setup").hidden = true;
   $("workout-screen").hidden = false;
@@ -311,19 +304,19 @@ function chooseDistance(value) {
 function updateDistance() {
   const travelled = sessionDistanceM / metresPerUnit();
   renderProgress();
-  if (travelled >= targetDistance) {
+  if (sessionDistanceM >= targetDistanceM) {
     stop();
     return;
   }
   let announcement = null;
   while (travelled >= nextMilestone) {
-    const remaining = targetDistance - nextMilestone;
+    const remaining = Number((targetDistanceM / metresPerUnit() - nextMilestone).toFixed(1));
     const down = unit === "miles" ? `${nextMilestone} miles` : `${nextMilestone}K`;
     const toGo = unit === "miles" && remaining === 0.5 ? "half a mile" : `${remaining}`;
     announcement = `${down} down, ${toGo} to go.`;
     nextMilestone += 0.5;
   }
-  const remainingMetres = targetDistance * metresPerUnit() - sessionDistanceM;
+  const remainingMetres = targetDistanceM - sessionDistanceM;
   for (const distance of [200, 100, 50]) {
     const thresholdMetres = unit === "miles" ? distance * 0.9144 : distance;
     if (remainingMetres <= thresholdMetres + 1e-6 && !announcedFinishDistances.has(distance)) {
@@ -362,6 +355,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function speak(text) {
+  if (activeSection !== "mistral") return;
   if (!text) return;
   // Keep cadence quiet while VoiceOver receives and reads a priority message.
   cadenceBlockedUntil = performance.now() + 8000;
@@ -374,6 +368,7 @@ function speak(text) {
   // A separate task gives the accessibility tree time to register the empty
   // region, including before the very first distance announcement.
   speakUpdateTimer = setTimeout(() => {
+    if (activeSection !== "mistral") return;
     r.textContent = text;
     speakTimer = setTimeout(() => { r.textContent = ""; }, 8000);
   }, 100);
@@ -382,7 +377,7 @@ function speak(text) {
 let lastBand = null;
 function updateRpm(cadenceRpm) {
   const band = Math.round(cadenceRpm / 5) * 5;
-  $("rpm-value").textContent = band;
+  $("rpm-value").textContent = `Cadence: ${band} RPM`;
   if (band !== lastBand) {
     lastBand = band;
     if (performance.now() < cadenceBlockedUntil) return;
@@ -466,10 +461,10 @@ function computeStats() {
 
 function renderStats() {
   const { todayKm, weekKm, monthKm, allKm } = computeStats();
-  $("stat-today").textContent   = `${distanceText(todayKm)}`;
-  $("stat-week").textContent    = `${distanceText(weekKm)}`;
-  $("stat-month").textContent   = `${distanceText(monthKm)}`;
-  $("stat-alltime").textContent = `${distanceText(allKm)}`;
+  $("stat-today").textContent   = "Today: " + (`${distanceText(todayKm)}`);
+  $("stat-week").textContent    = "Last 7 days: " + (`${distanceText(weekKm)}`);
+  $("stat-month").textContent   = "Last 30 days: " + (`${distanceText(monthKm)}`);
+  $("stat-alltime").textContent = "All time: " + (`${distanceText(allKm)}`);
 }
 
 function parseBike(view) { return BikeData.parse(view); }
@@ -502,7 +497,7 @@ function setSessionUI() {
   btn.disabled = false;
   $("rpm-display").hidden = false;
   lastBand = null;
-  $("rpm-value").textContent = "0";
+  $("rpm-value").textContent = "Cadence: 0 RPM";
 }
 
 function setReadyUI() {
@@ -557,17 +552,18 @@ function endSession() {
   const averageSpeed = elapsedSeconds > 0 ? sessionDistanceM / metresPerUnit() / (elapsedSeconds / 3600) : 0;
   recordSession(km);
   renderStats();
-  $("result-time").textContent = timeText(elapsedSeconds);
-  $("result-speed").textContent = `${averageSpeed.toFixed(1)} ${unit === "miles" ? "mph" : "km/h"}`;
+  lastResult = { elapsedSeconds, distanceM: sessionDistanceM };
+  $("result-time").textContent = "Time: " + (timeText(elapsedSeconds));
+  $("result-speed").textContent = "Average speed: " + (`${averageSpeed.toFixed(1)} ${unit === "miles" ? "mph" : "km/h"}`);
   $("results-section").hidden = false;
   $("results-heading").focus();
-  const completed = sessionDistanceM >= targetDistance * metresPerUnit();
+  const completed = sessionDistanceM >= targetDistanceM;
   const intro = completed ? "Workout complete." : "Workout stopped.";
-  const speedUnit = unit === "miles" ? "miles per hour" : "kilometres per hour";
   // Let the finish tones end before reading the two simple workout results.
   clearTimeout(resultAnnouncementTimer);
   resultAnnouncementTimer = setTimeout(() => {
-    speak(`${intro} Time: ${spokenTime(elapsedSeconds)}. Average speed: ${averageSpeed.toFixed(1)} ${speedUnit}.`);
+    const speedNow = elapsedSeconds > 0 ? sessionDistanceM / metresPerUnit() / (elapsedSeconds / 3600) : 0;
+    speak(`${intro} Time: ${spokenTime(elapsedSeconds)}. Average speed: ${speedNow.toFixed(1)} ${unit === "miles" ? "miles per hour" : "kilometres per hour"}.`);
   }, 1100);
 }
 
@@ -704,6 +700,7 @@ async function startSession() {
   }
   clearTimeout(resultAnnouncementTimer);
   $("results-section").hidden = true;
+  lastResult = null;
   sessionStartedAt = performance.now();
   sessionDistanceM = 0;
   nextMilestone = 0.5;
@@ -828,12 +825,25 @@ $("workout-audio").addEventListener("ended", updatePlaybackButton);
 document.querySelectorAll(".distance-choice").forEach(button => {
   button.addEventListener("click", () => chooseDistance(Number(button.dataset.distance)));
 });
-$("unit-btn").addEventListener("click", () => {
-  unit = unit === "miles" ? "km" : "miles";
+$("unit-btn").addEventListener("click", () => DistanceUnits.toggle("mistral"));
+$("workout-unit-btn").addEventListener("click", () => DistanceUnits.toggle("mistral"));
+DistanceUnits.subscribe("mistral", value => {
+  const changed = unit !== value;
+  unit = value;
   document.querySelectorAll(".distance-choice").forEach(button => {
     button.textContent = `${button.dataset.distance} ${unitLabel()}`;
   });
-  $("unit-btn").textContent = unit === "miles" ? "Switch to KM" : "Switch to miles";
+  for (const id of ["unit-btn", "workout-unit-btn"]) $(id).textContent = unit === "miles" ? "Switch to KM" : "Switch to miles";
+  if (targetDistanceM !== null) renderProgress();
+  if (sessionActive && changed) {
+    nextMilestone = (Math.floor(sessionDistanceM / metresPerUnit() * 2) + 1) / 2;
+    const remaining = targetDistanceM - sessionDistanceM;
+    announcedFinishDistances = new Set([200, 100, 50].filter(distance => remaining <= distance * (unit === "miles" ? 0.9144 : 1)));
+  }
+  if (lastResult) {
+    const speed = lastResult.elapsedSeconds > 0 ? lastResult.distanceM / metresPerUnit() / (lastResult.elapsedSeconds / 3600) : 0;
+    $("result-speed").textContent = `Average speed: ${speed.toFixed(1)} ${unit === "miles" ? "mph" : "km/h"}`;
+  }
   renderStats();
 });
 $("change-distance-btn").addEventListener("click", () => {
